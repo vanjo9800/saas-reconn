@@ -1,0 +1,67 @@
+- 'Microsoft Outlook'
+  urls:
+    - 'outlook.office.com/owa/'
+    - 'outlook.office365.com/owa/'
+- 'Box.com'
+  subdomain:
+    - 'box.com'
+  checks:
+    - 'logo'
+- 'Slack'
+  subdomain:
+    - 'slack.com'
+  checks:
+    - 'logo'
+- 'Zendesk'
+  subdomain:
+    - 'zendesk.com'
+  checks:
+    - 'non-existing'
+- 'Oracle Cloud'
+  subdomain:
+    - 'oraclecloud.com'
+  status:
+    - 'testing'
+- 'Cisco (Webex)'
+  subdomain:
+    - 'webex.com'
+  checks:
+    - 'logo'
+- 'ServiceNow'
+  subdomain:
+    - 'service-now.com'
+  checks:
+    - 'logo'
+- 'GitHub'
+  urls:
+    - 'github.com/'
+- 'Workday'
+  subdomain:
+    - 'myworkdayjobs.com'
+- 'Coupa'
+  subdomain:
+    - 'coupa.com'
+    - 'coupahost.com'
+- 'Atlassian'
+  subdomain:
+    - 'atlassian.net'
+- 'Shopify'
+  subdomain:
+    - 'shopifyapps.com'
+- 'Mailchimp'
+  subdomain:
+    - 'mailchimpsites.com'
+    - 'mailchi.mp'
+- 'Zoom'
+  subdomain:
+    - 'zoom.com'
+- 'Okta'
+  subdomain:
+    - 'okta.com'
+  check:
+    - 'logo'
+- 'OneLogin'
+  subdomain:
+    - 'onelogin.com'
+  check:
+    - 'logo'
