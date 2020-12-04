@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"math/rand"
@@ -62,8 +63,17 @@ func main() {
 	found := []string{}
 	found = append(found, hostsEnumeration(cfg)...)
 
-	for _, name := range found {
-		fmt.Println(name)
+	resultsDatabase := NewDatabase()
+	diff := resultsDatabase.updateProvider("Zoom.us", "zoom.us", found)
+	diff.dump()
+
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Println("Enter a subdomain to match for:")
+		text, _ := reader.ReadString('\n')
+		fmt.Println("Read " + text + ". Querying database...")
+		providerData := resultsDatabase.ProviderQuery("Zoom.us", text)
+		providerData.dump()
 	}
 
 }

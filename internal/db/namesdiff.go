@@ -1,38 +1,17 @@
-package db
+package saasreconn
 
-import "sort"
+type DataDiff struct {
+	added string[]
+	removed string[]
+}
 
-func DomainNamesDiff(old []string, new []string) []string {
-	sort.Strings(old)
-	sort.Strings(new)
-
-	resultDiff := []string{}
-	oldIndex := 0
-	newIndex := 0
-	for oldIndex < len(old) && newIndex < len(new) {
-		if old[oldIndex] < new[newIndex] {
-			append(resultDiff, "-:"+old[oldIndex])
-			oldIndex++
-			continue
-		}
-
-		if old[oldIndex] > new[newIndex] {
-			append(resultDiff, "+:"+new[newIndex])
-			newIndex++
-			continue
-		}
-
-		oldIndex++
-		newIndex++
+func (diff *DataDiff) dump() {
+	log.Info("Added:\n");
+	for _, domain := range diff.added {
+		log.Info("\t+ " + domain + "\n");
 	}
-	for oldIndex < len(old) {
-		append(resultDiff, "-:"+old[oldIndex])
-		oldIndex++
+	log.Info("Removed:\n");
+	for _, domain := range diff.removed {
+		log.Info("\t- " + domain + "\n");
 	}
-	for newIndex < len(new) {
-		append(resultDiff, "+:"+new[newIndex])
-		newIndex++
-	}
-
-	return resultDiff
 }
