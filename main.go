@@ -13,6 +13,8 @@ import (
 	"github.com/OWASP/Amass/v3/datasrcs"
 	"github.com/OWASP/Amass/v3/enum"
 	"github.com/OWASP/Amass/v3/systems"
+
+	"saasreconn/internal/db"
 )
 
 func nameToHosts() {
@@ -63,7 +65,7 @@ func main() {
 	found := []string{}
 	found = append(found, hostsEnumeration(cfg)...)
 
-	resultsDatabase := NewDatabase()
+	resultsDatabase := NameToPath() // NewDatabase()
 	diff := resultsDatabase.updateProvider("Zoom.us", "zoom.us", found)
 	diff.dump()
 
@@ -72,8 +74,11 @@ func main() {
 		fmt.Println("Enter a subdomain to match for:")
 		text, _ := reader.ReadString('\n')
 		fmt.Println("Read " + text + ". Querying database...")
-		providerData := resultsDatabase.ProviderQuery("Zoom.us", text)
-		providerData.dump()
+		if text == "STOP" {
+			break
+		}
+		// providerData := resultsDatabase.ProviderQuery("Zoom.us", text)
+		// providerData.dump()
 	}
 
 }

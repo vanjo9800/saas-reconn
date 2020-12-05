@@ -1,7 +1,7 @@
-package saasreconn
+package db 
 
 import (
-	"json"
+	"encoding/json"
 	"log"
 	"regexp"
 	"time"
@@ -21,25 +21,25 @@ func EmptyProviderData(providerName string) *ProviderData {
 	}
 }
 
-func ProvideDataFromJSON(data []byte) *ProviderData {
-	providerData := new(ProviderData)
-	err := json.Unmarshal(data, &providerData)
+func ProvideDataFromJSON(data []byte) (providerData *ProviderData, err error) {
+	providerData = new(ProviderData)
+	err = json.Unmarshal(data, &providerData)
 	if err != nil {
 		log.Fatal("Invalid provider data")
-		return EmptyProviderData(""), 1
+		return EmptyProviderData(""), err
 	}
 
-	return providerData
+	return providerData, err
 }
 
-func (data *ProviderData) ToJSON() []byte {
+func (data *ProviderData) ToJSON() (bytes []byte, err error) {
 	jsonOutput, err := json.Marshal(data)
 	if err != nil {
 		log.Fatal("Could not convert to JSON")
-		return "", 1
+		return nil, err
 	}
 
-	return jsonOutput
+	return jsonOutput, err
 }
 
 func (data *ProviderData) query(domainPattern string) *ProviderData {
@@ -63,7 +63,7 @@ func (data *ProviderData) query(domainPattern string) *ProviderData {
 	}
 }
 
-func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains []string) {
+func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains []string) *DataDiff {
 
 	uniqueDomains := make(map[string]int)
 
@@ -71,7 +71,7 @@ func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains [
 		uniqueDomains[domain] = 1
 	}
 	for _, domain := range newSubdomains {
-		val, _ = uniqueDomains[domain]
+		val, _ := uniqueDomains[domain]
 		uniqueDomains[domain] = val + 2
 	}
 	
@@ -92,17 +92,17 @@ func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains [
 
 	return &DataDiff{
 		added: addedDomains,
-		removed: removedDomains
+		removed: removedDomains,
 	}
 }
 
 func (providerData *ProviderData) dump() {
-	log.Info("ProviderName: " + providerData.providerName + "\n");
-	log.Info("Collected: " + providerData.collected.String() + "\n");
+	log.Println("ProviderName: " + providerData.providerName);
+	log.Println("Collected: " + providerData.collected.String());
 	for subdomain, data := range providerData.subdomains {
-		log.Info("\t" + subdomain + ":\n");
+		log.Println("\t" + subdomain);
 		for _, data := range data {
-			log.Info("\t\t" + data + "\n")
+			log.Println("\t\t" + data)
 		}
 	}
 }

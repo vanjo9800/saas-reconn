@@ -1,17 +1,21 @@
-package saasreconn
+package db
+
+import (
+	"log"
+)
 
 type DataDiff struct {
-	added string[]
-	removed string[]
+	added []string
+	removed []string
 }
 
 func (diff *DataDiff) dump() {
-	log.Info("Added:\n");
+	log.Println("Added:");
 	for _, domain := range diff.added {
-		log.Info("\t+ " + domain + "\n");
+		log.Println("\t+ " + domain);
 	}
-	log.Info("Removed:\n");
+	log.Println("Removed:");
 	for _, domain := range diff.removed {
-		log.Info("\t- " + domain + "\n");
+		log.Println("\t- " + domain );
 	}
 }

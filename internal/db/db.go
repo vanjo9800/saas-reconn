@@ -1,6 +1,7 @@
-package saasreconn
+package db
 
 import (
+	"errors"
 	"io/ioutil"
 	"log"
 	"os"
@@ -47,68 +48,70 @@ func (db *Database) Initialise() bool {
 	return db.initialised
 }
 
-func (db *Database) FetchDataForProvider(providerName string) *ProviderData {
+func (db *Database) FetchDataForProvider(providerName string) (providerData *ProviderData, err error) {
 	success := db.Initialise()
 	if !success {
 		log.Fatal("Could not initialise database")
-		return nil, 1
+		return nil, errors.New("Could not initialise database")
 	}
 
 	data, err := ioutil.ReadFile("db/" + NameToPath(providerName) + ".data")
 	if err != nil {
 		log.Fatal("Could not read provider data")
-		return EmptyProviderData(providerName)
+		return EmptyProviderData(providerName), nil
 	}
 
 	return ProvideDataFromJSON(data)
 }
 
-func (db *Database) ProviderQuery(providerName string, domainPattern string) *ProviderData {
-	providerData, err := db.FetchDataForProvider(providerName)
+func (db *Database) ProviderQuery(providerName string, domainPattern string) (providerData *ProviderData, err error) {
+	providerSavedData, err := db.FetchDataForProvider(providerName)
 	if err != nil {
 		log.Fatal("There was an error fetching data for provider " + providerName)
-		return nil, 1
+		return nil, errors.New("There was an error fetching data for provider " + providerName)
 	}
 
-	return providerSavedData.query(domainPattern)
+	return providerSavedData.query(domainPattern), nil
 }
 
-func (db *Database) SaveProviderData(data ProviderData) {
+func (db *Database) SaveProviderData(data *ProviderData) error {
 	success := db.Initialise()
 	if !success {
 		log.Fatal("Could not initialise database")
-		return 1
+		return errors.New("Could not initialise database")
 	}
 
-	dataJson, err = data.ToJSON()
+	dataJson, err := data.ToJSON()
 	if err != nil {
 		log.Fatal("Could not convert provider data to JSON for provider " + data.providerName)
-		return 1
+		return err
 	}
 
-	err := ioutil.WriteFile("db/"+NameToPath(data.providerName)+".data", dataJson, 0755)
+	err = ioutil.WriteFile("db/"+NameToPath(data.providerName)+".data", dataJson, 0755)
 	if err != nil {
 		log.Fatal("Failed to write provider data file for provider " + data.providerName)
-		return 1
+		return err
 	}
+
+	return nil
 }
 
-func (db *Database) UpdateProvider(providerName string, rootDomain string, names []string) *DataDiff {
-	providerData, err = db.FetchDataForProvider(providerName)
+func (db *Database) UpdateProvider(providerName string, rootDomain string, names []string) (dataDiff *DataDiff, err error) {
+	providerData, err := db.FetchDataForProvider(providerName)
 	if err != nil {
 		log.Fatal("There was an error fetching data for provider " + providerName)
-		return nil, 1
+		return nil, err
 	}
 
-	dataDiff := providerData.updateDomainEntries(names)
+	dataDiff = providerData.updateDomainEntries(rootDomain, names)
 
-	err := SaveProviderData(providerData)
+	err = db.SaveProviderData(providerData)
 	if err != nil {
 		log.Fatal("Could not update provider data for provider " + providerName)
-		return nil, 1
+		return nil, err
 	}
 
-	return dataDiff
+	return dataDiff, nil
 }
 
 func (db *Database) DeleteProvider(providerName string) bool {
