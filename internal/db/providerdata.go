@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"regexp"
+	"sort"
 	"time"
 )
 
@@ -59,7 +60,6 @@ func (data *ProviderData) query(domainPattern string) *ProviderData {
 		}
 		domainsMap[rootDomain] = matchingDomains
 	}
-	log.Println("matched: " + " " + domainPattern)
 
 	return &ProviderData{
 		ProviderName: data.ProviderName,
@@ -93,6 +93,9 @@ func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains [
 		allDomains = append(allDomains, domain)
 	}
 
+	sort.Strings(allDomains)
+	sort.Strings(addedDomains)
+	sort.Strings(removedDomains)
 	data.Subdomains[rootDomain] = allDomains
 
 	return &DataDiff{
@@ -103,15 +106,19 @@ func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains [
 
 // Dump is a helper function which prints the whole ProviderData object
 func (data *ProviderData) Dump() {
-	log.Println("ProviderName: " + data.ProviderName)
-	log.Println("Collected: " + data.Collected.String())
+	printedIntro := 0
 	for subdomain, domainsArray := range data.Subdomains {
 		if len(domainsArray) == 0 {
 			continue
 		}
-		log.Println("\t- " + subdomain)
+		if printedIntro == 0 {
+			log.Println("ProviderName: " + data.ProviderName)
+			log.Println("Collected: " + data.Collected.String())
+			printedIntro = 1
+		}
+		log.Println("  - " + subdomain)
 		for _, domain := range domainsArray {
-			log.Println("\t\t- " + domain)
+			log.Println("    - " + domain)
 		}
 	}
 }

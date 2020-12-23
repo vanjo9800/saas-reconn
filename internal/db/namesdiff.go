@@ -16,8 +16,8 @@ func (diff *DataDiff) Dump() {
 	for _, domain := range diff.added {
 		log.Println("\t+ " + domain)
 	}
-	log.Println("Removed:")
-	for _, domain := range diff.removed {
-		log.Println("\t- " + domain)
-	}
+	// log.Println("Removed:")
+	// for _, domain := range diff.removed {
+	// 	log.Println("\t- " + domain)
+	// }
 }

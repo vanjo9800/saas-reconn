@@ -13,6 +13,7 @@ type apiCredentials struct {
 	Password string `yaml:"password"`
 	Key      string `yaml:"apikey"`
 	Secret   string `yaml:"secret"`
+	TTL      int    `yaml:"ttl"`
 }
 
 func SetupAPICredentials(cfg *config.Config, credentialsFile string) error {
@@ -31,7 +32,11 @@ func SetupAPICredentials(cfg *config.Config, credentialsFile string) error {
 	}
 
 	for provider, details := range credentials {
+		log.Println("Adding " + provider + " credentials")
 		providerConfig := cfg.GetDataSourceConfig(provider)
+		if details.TTL != 0 {
+			providerConfig.TTL = details.TTL
+		}
 		if details.Username != "" {
 			providerConfig.AddCredentials(&config.Credentials{
 				Name: "username",
