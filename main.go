@@ -44,6 +44,7 @@ func main() {
 		for name, data := range saasProviders {
 			for _, domain := range data.Subdomain {
 				found := api.CrtShQuery(domain)
+				found = append(found, api.SurveyQuery(domain)...)
 				// found = append(found, api.SearchDNSQuery(domain, "ends")...)
 				diff, _ := resultsDatabase.UpdateProvider(name, domain, found)
 				diff.Dump()
