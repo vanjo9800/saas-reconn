@@ -5,6 +5,7 @@ import (
 	"log"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -104,7 +105,22 @@ func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains [
 	}
 }
 
-// Dump is a helper function which prints the whole ProviderData object
+// AsString is a helper method that converts a ProviderData object into a string of subdomains
+func (data *ProviderData) AsString(onlyPrefix bool) (subdomains []string) {
+	for subdomain, domainsArray := range data.Subdomains {
+		for _, domain := range domainsArray {
+			if onlyPrefix {
+				subdomains = append(subdomains, strings.Trim(domain, subdomain))
+			} else {
+				subdomains = append(subdomains, domain)
+			}
+		}
+	}
+
+	return subdomains
+}
+
+// Dump is a helper method which prints the whole ProviderData object
 func (data *ProviderData) Dump() {
 	printedIntro := 0
 	for subdomain, domainsArray := range data.Subdomains {

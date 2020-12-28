@@ -60,7 +60,7 @@ func (db *Database) FetchDataForProvider(providerName string) (providerData *Pro
 
 	data, err := ioutil.ReadFile("db/" + nameToPath(providerName) + ".json")
 	if err != nil {
-		log.Println("Could not find existing provider data")
+		log.Printf("[%s] Could not find existing provider data", providerName)
 		return EmptyProviderData(providerName), nil
 	}
 

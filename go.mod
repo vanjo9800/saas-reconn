@@ -3,6 +3,7 @@ module saasreconn
 go 1.15
 
 require saasreconn/internal/db v1.0.0
+require saasreconn/internal/checks v1.0.0
 
 replace saasreconn/internal/db => ./internal/db
 
@@ -17,3 +18,4 @@ require (
 replace saasreconn/internal/provider => ./internal/provider
 
 replace saasreconn/internal/api => ./internal/api
+replace saasreconn/internal/checks => ./internal/checks
