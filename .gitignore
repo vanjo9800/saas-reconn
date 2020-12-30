@@ -1,3 +1,4 @@
 db/
+cache/
 configs/credentials.yaml
 .vscode/

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"saasreconn/internal/api"
 	"saasreconn/internal/checks"
@@ -26,6 +27,7 @@ func main() {
 	// Read flags
 	enum := flag.Bool("enum", false, "a bool whether to enumerate domains from various online sources")
 	passive := flag.Bool("passive", false, "a bool whether to run a passive scan")
+	noCache := flag.Bool("no-cache", false, "a bool whether to use pre-existing")
 	endpoints := flag.String("endpoints-config", "configs/saas_endpoints.yaml", "a SaaS providers endpoints file")
 	// apiCredentials := flag.String("api-credentials", "configs/credentials.yaml", "online APIs credentials")
 	flag.Parse()
@@ -59,6 +61,10 @@ func main() {
 		log.Fatalln("Please enter at least one corporate name to scan for.")
 	}
 	for _, name := range argsWithoutProg {
+		if strings.HasPrefix(name, "-") {
+			continue
+		}
+
 		fmt.Println("Read \"" + name + "\". Querying database...")
 
 		providersData := passiveData(name, *resultsDatabase, saasProviders)
@@ -67,31 +73,26 @@ func main() {
 				provider.Dump()
 			}
 		} else {
+			// Find prefixes
 			usedPrefixes := []string{}
 			for _, provider := range providersData {
 				usedPrefixes = append(usedPrefixes, provider.AsString(true)...)
 			}
-			// Check resolves
-			resolvableNames := map[string]checks.SubdomainRange{}
+
+			// Validate possible domains
+			validNames := map[string]checks.SubdomainRange{}
 			for name, provider := range saasProviders {
 				for _, subdomain := range provider.Subdomain {
 					possibleNames := checks.SubdomainRange{
 						Base:     subdomain,
 						Prefixes: usedPrefixes,
 					}
-					resolvableNames[subdomain] = possibleNames.Resolvable()
-					log.Printf("[%s] %d prefixes, %d resolvable", name, len(possibleNames.Prefixes), len(resolvableNames[subdomain].Prefixes))
+					validNames[subdomain] = possibleNames.Validate(*noCache)
+					log.Printf("[%s] %d prefixes, %d valid", name, len(possibleNames.Prefixes), len(validNames[subdomain].Prefixes))
 				}
 			}
-			// Check different than example page
-			uniqueNames := map[string]checks.SubdomainRange{}
-			for name, provider := range saasProviders {
-				for _, subdomain := range provider.Subdomain {
-					uniqueNames[subdomain] = resolvableNames[subdomain].UniquePage()
-					log.Printf("[%s] %d resolvable, %d unique", name, len(resolvableNames[subdomain].Prefixes), len(uniqueNames[subdomain].Prefixes))
-				}
-			}
-			for _, ranges := range uniqueNames {
+
+			for _, ranges := range validNames {
 				ranges.Dump()
 			}
 			// Check logos and other specific features
