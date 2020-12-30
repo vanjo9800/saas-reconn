@@ -76,7 +76,7 @@ func SearchDNSQuery(domain string, position string) (subdomains []string) {
 
 		if i%5 == 0 {
 			log.Printf("[%s] Sleeping...", domain)
-			time.Sleep(60 * time.Second)
+			time.Sleep(300 * time.Second)
 		}
 		subdomains = append(subdomains, newSubdomains...)
 	}

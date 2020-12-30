@@ -30,6 +30,7 @@ func main() {
 	noCache := flag.Bool("no-cache", false, "a bool whether to use pre-existing")
 	dataProviders := flag.String("dataproviders", "Crt.sh", "a comma separated list of passive data providers to use (default Crt.sh)")
 	endpoints := flag.String("endpoints-config", "configs/saas_endpoints.yaml", "a SaaS providers endpoints file")
+	apikey := flag.String("apikey", "", "VirusTotal API key")
 	// apiCredentials := flag.String("api-credentials", "configs/credentials.yaml", "online APIs credentials")
 	flag.Parse()
 
@@ -52,6 +53,9 @@ func main() {
 				}
 				if strings.Contains(*dataProviders, "SearchDNS") {
 					found = append(found, api.SearchDNSQuery(domain, "ends")...)
+				}
+				if strings.Contains(*dataProviders, "VirusTotal") {
+					found = append(found, api.VirusTotalQuery(domain, *apikey)...)
 				}
 				diff, _ := resultsDatabase.UpdateProvider(name, domain, found)
 				diff.Dump()

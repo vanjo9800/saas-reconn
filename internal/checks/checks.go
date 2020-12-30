@@ -58,8 +58,6 @@ func (checkRange SubdomainRange) Validate(noCache bool) (validRange SubdomainRan
 		errorPage, _ = ioutil.ReadAll(resp.Body)
 		errorPageClean2 := cleanResponse(string(errorPage), randomHostname2)
 		if errorPageClean != errorPageClean2 {
-			err = ioutil.WriteFile(checkRange.Base+"temp1.json", []byte(errorPageClean), 0755)
-			err = ioutil.WriteFile(checkRange.Base+"temp2.json", []byte(errorPageClean2), 0755)
 			log.Printf("[%s] Non-existing pages have different responses!", checkRange.Base)
 		}
 	}
@@ -90,8 +88,6 @@ func (checkRange SubdomainRange) Validate(noCache bool) (validRange SubdomainRan
 				testPage, _ := ioutil.ReadAll(resp.Body)
 				cleanBody := cleanResponse(string(testPage), hostname)
 				if cleanBody != errorPageClean {
-					err = ioutil.WriteFile(hostname+"temp.json", []byte(cleanBody), 0755)
-					err = ioutil.WriteFile(checkRange.Base+"temp.json", []byte(errorPageClean), 0755)
 					domainData.PageBody = true
 					validRange.Prefixes = append(validRange.Prefixes, prefix)
 				}
