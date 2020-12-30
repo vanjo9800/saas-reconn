@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -36,15 +35,11 @@ func browserFetch(domain string, position string, last string, from int) (count 
 
 }
 
-func parseCount(count string) int64 {
+func parseCount(count string) (pageNumber int64, err error) {
 	records := strings.Fields(count)
 	pageString := strings.TrimSuffix(records[len(records)-1], ")")
-	pageNumber, err := strconv.ParseInt(pageString, 10, 0)
-	if err != nil {
-		log.Fatal("Could not parse page number")
-	}
 
-	return pageNumber
+	return strconv.ParseInt(pageString, 10, 0)
 }
 
 func parseDomains(domains string) (subdomains []string, last string) {
@@ -57,31 +52,36 @@ func parseDomains(domains string) (subdomains []string, last string) {
 	}
 
 	return subdomains, last
-
 }
 
-func SearchDNSQuery(domain string, position string) []string {
+func SearchDNSQuery(domain string, position string) (subdomains []string) {
 
-	log.Println("Querying SearchDNS for " + domain + " at position " + position)
+	log.Printf("[%s] Querying SearchDNS position %s", domain, position)
+	start := time.Now()
 	count, domains := browserFetch(domain, position, "", 0)
 
-	pageCount := parseCount(count)
+	pageCount, err := parseCount(count)
+	if err != nil {
+		log.Printf("[%s] Could not parse page number", domain)
+		return subdomains
+	}
 	subdomains, last := parseDomains(domains)
 
-	log.Println("Page count: " + fmt.Sprint(pageCount))
+	log.Printf("[%s] Page count: %d", domain, pageCount)
 	newSubdomains := []string{}
 	for i := 1; int64(i) < pageCount; i++ {
-		log.Print("Processing page " + fmt.Sprint(i) + "\r")
+		log.Printf("[%s] Processing page %d\r", domain, i)
 		_, domains = browserFetch(domain, position, last, len(subdomains)+1)
 		newSubdomains, last = parseDomains(domains)
 
 		if i%5 == 0 {
-			log.Print("Sleeping...")
+			log.Printf("[%s] Sleeping...", domain)
 			time.Sleep(60 * time.Second)
 		}
 		subdomains = append(subdomains, newSubdomains...)
 	}
 
-	log.Println("Found " + fmt.Sprint(len(subdomains)) + " subdomains")
+	elapsed := time.Since(start)
+	log.Printf("[%s] Found %d subdomains in %s", domain, len(subdomains), elapsed)
 	return subdomains
 }

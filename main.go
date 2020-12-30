@@ -28,6 +28,7 @@ func main() {
 	enum := flag.Bool("enum", false, "a bool whether to enumerate domains from various online sources")
 	passive := flag.Bool("passive", false, "a bool whether to run a passive scan")
 	noCache := flag.Bool("no-cache", false, "a bool whether to use pre-existing")
+	dataProviders := flag.String("dataproviders", "Crt.sh", "a comma separated list of passive data providers to use (default Crt.sh)")
 	endpoints := flag.String("endpoints-config", "configs/saas_endpoints.yaml", "a SaaS providers endpoints file")
 	// apiCredentials := flag.String("api-credentials", "configs/credentials.yaml", "online APIs credentials")
 	flag.Parse()
@@ -45,8 +46,13 @@ func main() {
 		log.Println("Updating JSON files")
 		for name, data := range saasProviders {
 			for _, domain := range data.Subdomain {
-				found := api.CrtShQuery(domain)
-				// found = append(found, api.SearchDNSQuery(domain, "ends")...)
+				found := []string{}
+				if strings.Contains(*dataProviders, "Crt.sh") {
+					found = append(found, api.CrtShQuery(domain)...)
+				}
+				if strings.Contains(*dataProviders, "SearchDNS") {
+					found = append(found, api.SearchDNSQuery(domain, "ends")...)
+				}
 				diff, _ := resultsDatabase.UpdateProvider(name, domain, found)
 				diff.Dump()
 			}

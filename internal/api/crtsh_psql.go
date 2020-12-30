@@ -13,16 +13,29 @@ func CrtShQuery(domain string) (subdomains []string) {
 	log.Println("Querying Crt.sh for " + domain)
 	start := time.Now()
 
+	time.Sleep(10 * time.Second)
+
 	cfg, err := pgconn.ParseConfig("user=guest host=crt.sh port=5432 database=certwatch")
 	if err != nil {
-		log.Fatalln("Could not parse Postgres connect config:", err)
+		log.Fatalf("[%s] Could not parse Postgres connect config: %s", domain, err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	pgConn, err := pgconn.ConnectConfig(ctx, cfg)
 	if err != nil {
-		log.Fatalln("pgconn failed to connect:", err)
+		log.Printf("[%s] pgconn failed to connect: %s", domain, err)
+		for i := 1; i < 3; i++ {
+			log.Println("Retrying...")
+			pgConn, err = pgconn.ConnectConfig(ctx, cfg)
+			if err == nil {
+				break
+			}
+			log.Printf("[%s] pgconn failed to connect: %s", domain, err)
+		}
+		if err != nil {
+			return subdomains
+		}
 	}
 	defer pgConn.Close(context.Background())
 
@@ -30,15 +43,15 @@ func CrtShQuery(domain string) (subdomains []string) {
 	for result.NextRow() {
 		subdomains = append(subdomains, string(result.Values()[0]))
 		if len(subdomains) > 100000 {
-			log.Println("Read more than 100000 domains, skipping for now...")
-			break;
+			log.Printf("[%s] Read more than 100000 domains, skipping for now...", domain)
+			break
 		}
 	}
 	_, err = result.Close()
 	if err != nil {
-		log.Println("failed reading result:", err)
+		log.Printf("[%s] failed reading result: %s", domain, err)
 	}
 	elapsed := time.Since(start)
-	log.Printf("Found %d subdomains in %s", len(subdomains), elapsed)
+	log.Printf("[%s] Found %d subdomains in %s", domain, len(subdomains), elapsed)
 	return subdomains
 }
