@@ -88,17 +88,28 @@ func main() {
 			for _, provider := range providersData {
 				usedPrefixes = append(usedPrefixes, provider.AsString(true)...)
 			}
+			// TODO: maybe add some checks later
+			usedPrefixes = append(usedPrefixes, name)
+			usedPrefixes = append(usedPrefixes, name+".com")
 
 			// Validate possible domains
 			validNames := map[string]checks.SubdomainRange{}
 			for name, provider := range saasProviders {
 				for _, subdomain := range provider.Subdomain {
 					possibleNames := checks.SubdomainRange{
-						Base:     subdomain,
+						Base:     checks.SubdomainBase(subdomain),
 						Prefixes: usedPrefixes,
 					}
 					validNames[subdomain] = possibleNames.Validate(*noCache)
 					log.Printf("[%s] %d prefixes, %d valid", name, len(possibleNames.Prefixes), len(validNames[subdomain].Prefixes))
+				}
+				for _, url := range provider.Urls {
+					possibleNames := checks.SubdomainRange{
+						Base:     checks.UrlBase(url),
+						Prefixes: usedPrefixes,
+					}
+					validNames[url] = possibleNames.Validate(*noCache)
+					log.Printf("[%s] %d prefixes, %d valid", name, len(possibleNames.Prefixes), len(validNames[url].Prefixes))
 				}
 			}
 
