@@ -10,6 +10,7 @@ import (
 	"saasreconn/internal/api"
 	"saasreconn/internal/checks"
 	"saasreconn/internal/db"
+	"saasreconn/internal/dns"
 	"saasreconn/internal/provider"
 )
 
@@ -26,6 +27,7 @@ func main() {
 
 	// Read flags
 	enum := flag.Bool("enum", false, "a bool whether to enumerate domains from various online sources")
+	zonewalk := flag.Bool("zonewalk", false, "a bool whether to perform DNS zone-walking on existing providers and expand the passive database")
 	passive := flag.Bool("passive", false, "a bool whether to run a passive scan")
 	noCache := flag.Bool("no-cache", false, "a bool whether to use pre-existing")
 	dataProviders := flag.String("dataproviders", "Crt.sh", "a comma separated list of passive data providers to use (default Crt.sh)")
@@ -63,7 +65,22 @@ func main() {
 		}
 
 		os.Exit(0)
+	}
 
+	if *zonewalk {
+		// for name, provider := range saasProviders {
+		// 	for _, subdomain := range provider.Subdomain {
+		// 		foundNames := dns.ZoneWalkAttempt(subdomain, "", 53)
+		// 		log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", name, subdomain, len(foundNames))
+		// diff, _ := resultsDatabase.UpdateProvider(name, subdomain, foundNames)
+		// diff.Dump()
+		// 	}
+		// }
+		dns.ZoneWalkAttempt("salesforce.com", "8.8.8.8", 53)
+		foundNames := dns.ZoneWalkAttempt("getdnsapi.net", "8.8.8.8", 53)
+		diff, _ := resultsDatabase.UpdateProvider("GetDNSApi", "getdnsapi.net", foundNames)
+		diff.Dump()
+		os.Exit(0)
 	}
 
 	argsWithoutProg := os.Args[1:]
