@@ -7,11 +7,11 @@ import (
 	"os"
 	"strings"
 
-	"saasreconn/internal/api"
-	"saasreconn/internal/checks"
-	"saasreconn/internal/db"
-	"saasreconn/internal/dns"
-	"saasreconn/internal/provider"
+	"saasreconn/pkg/api"
+	"saasreconn/pkg/checks"
+	"saasreconn/pkg/db"
+	"saasreconn/pkg/dns"
+	"saasreconn/pkg/provider"
 )
 
 func passiveData(corporate string, db db.Database, providers map[string]provider.SaaSProvider) (providersData []db.ProviderData) {
