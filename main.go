@@ -77,9 +77,9 @@ func main() {
 		// 	}
 		// }
 		dns.ZoneWalkAttempt("salesforce.com", "8.8.8.8", 53)
-		foundNames := dns.ZoneWalkAttempt("getdnsapi.net", "8.8.8.8", 53)
-		diff, _ := resultsDatabase.UpdateProvider("GetDNSApi", "getdnsapi.net", foundNames)
-		diff.Dump()
+		// foundNames := dns.ZoneWalkAttempt("getdnsapi.net", "8.8.8.8", 53)
+		// diff, _ := resultsDatabase.UpdateProvider("GetDNSApi_2", "getdnsapi.net", foundNames)
+		// diff.Dump()
 		os.Exit(0)
 	}
 
