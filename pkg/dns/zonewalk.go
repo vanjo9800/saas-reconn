@@ -1,11 +1,13 @@
 package dns
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"log"
 	"math/rand"
 	"net"
+	"os"
 	"regexp"
 	"saasreconn/pkg/cache"
 	"sort"
@@ -16,7 +18,8 @@ import (
 	"github.com/miekg/dns"
 )
 
-const domainNameCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+const DomainNameCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+const WordlistName = "resources/namelist.txt"
 
 var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -60,10 +63,10 @@ func detectDNSSECType(zone string, nameserver string) (recordType string, salt s
 			algorithm := int(rr.(*dns.NSEC3).Hash)
 			if algorithm != 1 {
 				log.Printf("[%s] Unsupported NSEC3 hashing algorithm %d", zone, algorithm)
+				continue
 			}
 			iterations = int(rr.(*dns.NSEC3).Iterations)
 			salt = rr.(*dns.NSEC3).Salt
-			log.Printf("[%s] Unsupported NSEC3PARAM record %d, %s", zone, iterations, salt)
 			return "nsec3", salt, iterations
 		}
 	}
@@ -109,7 +112,7 @@ func ZoneWalkAttempt(zone string, nameserver string, port int) (names []string) 
 		log.Printf("[%s] Starting NSEC3 zone-walking...", zone)
 		// Do NSEC3 zone-walking
 		hashes := nsec3ZoneScan(zone, nameserver, salt, iterations)
-		mapping := make(map[string]string) // reverseNSEC3Hashes(hashes)
+		mapping := reverseNSEC3Hashes(hashes, zone, salt, iterations)
 
 		cachedResults := cache.NewCache()
 		cachedZoneWalk, err := cachedResults.FetchCachedZoneWalk(zone)
@@ -193,7 +196,7 @@ func nsec3ZoneScan(zone string, nameserver string, salt string, iterations int) 
 	zoneRecord := CreateZoneList()
 
 	for i := 0; i < hashTries; i++ {
-		randomDomain := randomStringWithCharset(27, domainNameCharset)
+		randomDomain := randomStringWithCharset(27, DomainNameCharset)
 
 		resp, _, err := dnssecQuery(nameserver, fmt.Sprintf("%s.%s", randomDomain, zone), dns.TypeA)
 		if err != nil {
@@ -218,13 +221,62 @@ func nsec3ZoneScan(zone string, nameserver string, salt string, iterations int) 
 
 				headerHash := rr.(*dns.NSEC3).Header().Name
 				headerHash = strings.ToUpper(strings.ReplaceAll(headerHash, "."+zone, ""))
-				fmt.Printf("Hash %d: Adding %s and %s\r", i, headerHash, rr.(*dns.NSEC3).NextDomain)
+				fmt.Printf("\rHash %d: Adding %s and %s", i, headerHash, rr.(*dns.NSEC3).NextDomain)
 				zoneRecord.AddRecord(headerHash, rr.(*dns.NSEC3).NextDomain)
 			}
 		}
 	}
 
+	log.Printf("\n[%s] Found %d hashes with coverage %s", zone, zoneRecord.records, zoneRecord.Coverage())
+
 	return zoneRecord.Names()
+}
+
+func reverseNSEC3Hashes(hashes []string, zone string, salt string, iterations int) (mapping map[string]string) {
+
+	mapping = make(map[string]string)
+
+	fastLookup := make(map[string]bool)
+	for _, hash := range hashes {
+		fastLookup[hash] = true
+	}
+
+	_, err := os.Stat(WordlistName)
+	if os.IsNotExist(err) {
+		log.Printf("Could not read domain namelist %s", err)
+		limit := 1000 //15000000 approx 63^4, so all 4 symbol hashes
+		for i := 0; i < limit; i++ {
+			randomGuess := randomStringWithCharset(4, DomainNameCharset)
+			nsec3 := dns.HashName(fmt.Sprintf("%s.%s", randomGuess, zone), dns.SHA1, uint16(iterations), salt)
+			if _, ok := fastLookup[nsec3]; ok {
+				mapping[nsec3] = randomGuess
+			}
+		}
+		return mapping
+	}
+
+	file, err := os.Open(WordlistName)
+	if err != nil {
+		log.Printf("Error opening wordlist file %s", err)
+		return mapping
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		guess := scanner.Text()
+		nsec3 := dns.HashName(fmt.Sprintf("%s.%s", guess, zone), dns.SHA1, uint16(iterations), salt)
+		if _, ok := fastLookup[nsec3]; ok {
+			mapping[nsec3] = guess
+			log.Printf("Guessed %s and %s", nsec3, guess)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("Error reading wordlist file %s", err)
+	}
+
+	return mapping
 }
 
 func dnssecQuery(nameserver string, queryName string, queryType uint16) (response *dns.Msg, rtt time.Duration, err error) {

@@ -72,14 +72,18 @@ func main() {
 		// 	for _, subdomain := range provider.Subdomain {
 		// 		foundNames := dns.ZoneWalkAttempt(subdomain, "", 53)
 		// 		log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", name, subdomain, len(foundNames))
-		// diff, _ := resultsDatabase.UpdateProvider(name, subdomain, foundNames)
-		// diff.Dump()
+		// 		diff, _ := resultsDatabase.UpdateProvider(name, subdomain, foundNames)
+		// 		diff.Dump()
 		// 	}
 		// }
-		dns.ZoneWalkAttempt("salesforce.com", "8.8.8.8", 53)
-		// foundNames := dns.ZoneWalkAttempt("getdnsapi.net", "8.8.8.8", 53)
-		// diff, _ := resultsDatabase.UpdateProvider("GetDNSApi_2", "getdnsapi.net", foundNames)
-		// diff.Dump()
+		foundNames := dns.ZoneWalkAttempt("salesforce.com", "8.8.8.8", 53)
+		log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", "Salesforce", "salesforce.com", len(foundNames))
+		for _, name := range foundNames {
+			log.Printf("- %s", name)
+		}
+		// // foundNames := dns.ZoneWalkAttempt("getdnsapi.net", "8.8.8.8", 53)
+		// // diff, _ := resultsDatabase.UpdateProvider("GetDNSApi_2", "getdnsapi.net", foundNames)
+		// // diff.Dump()
 		os.Exit(0)
 	}
 
