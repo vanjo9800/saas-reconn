@@ -54,7 +54,7 @@ func (cache *Cache) Initialise(path string) bool {
 
 	if !cache.initialised {
 		if _, err := os.Stat(fmt.Sprintf("cache/%s/", path)); os.IsNotExist(err) {
-			err := os.Mkdir(fmt.Sprintf("cache/%s/", path), 0755)
+			err := os.MkdirAll(fmt.Sprintf("cache/%s/", path), 0755)
 			if err != nil {
 				log.Fatal(err)
 				return false

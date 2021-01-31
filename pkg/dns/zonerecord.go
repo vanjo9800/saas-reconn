@@ -9,12 +9,15 @@ import (
 
 // rbt "github.com/emirpasic/gods/trees/redblacktree"
 
+// ZoneRecord is the object entity in the linked list zone map
 type ZoneRecord struct {
 	name string
 	prev string
 	next string
 }
 
+// ZoneList is the instance of a LinkedList representing the zone map
+// It also has some helper parameters such as number of links, number of records and expected size
 type ZoneList struct {
 	records      int64
 	links        int
@@ -24,17 +27,17 @@ type ZoneList struct {
 	noNext       map[string]bool
 }
 
-var SHA1_MAX_SIZE *big.Int = new(big.Int).Exp(big.NewInt(2), big.NewInt(160), big.NewInt(0))
+var sha1MaxSize *big.Int = new(big.Int).Exp(big.NewInt(2), big.NewInt(160), big.NewInt(0))
 
 func nsec3HashToNumber(hash string) *big.Int {
-	sha1_data, err := base32.HexEncoding.DecodeString(hash)
+	sha1Data, err := base32.HexEncoding.DecodeString(hash)
 	if err != nil {
 		log.Printf("Could not parse base32 hash %s due to %s", hash, err)
 		return nil
 	}
 
 	number := new(big.Int)
-	number.SetBytes(sha1_data)
+	number.SetBytes(sha1Data)
 	return number
 }
 
@@ -48,29 +51,31 @@ func coveredDistance(hash1 string, hash2 string) *big.Int {
 		// hashes are in order
 		result := new(big.Int)
 		return result.Sub(number2, number1)
-	} else {
-		// We reached the end of the zone, so we get the last and first entry
-		result := new(big.Int)
-		return number2.Add(result.Sub(SHA1_MAX_SIZE, number1), number2)
 	}
+	// We reached the end of the zone, so we get the last and first entry
+	result := new(big.Int)
+	return number2.Add(result.Sub(sha1MaxSize, number1), number2)
 }
 
+// Coverage returns an estimated coverage of the zone based on the number of current entries and the maximum projected number of entries
 func (list *ZoneList) Coverage() string {
 	result := new(big.Float)
 	return result.Quo(new(big.Float).SetInt(big.NewInt(list.records)), new(big.Float).SetInt(&list.expectedSize)).String()
 }
 
+// CreateZoneList constructs an empty zone list object
 func CreateZoneList() *ZoneList {
 	return &ZoneList{
 		records:      0,
 		links:        0,
-		expectedSize: *SHA1_MAX_SIZE,
+		expectedSize: *sha1MaxSize,
 		names:        map[string]ZoneRecord{},
 		noPrevious:   map[string]bool{},
 		noNext:       map[string]bool{},
 	}
 }
 
+// AddRecord adds an NSEC3 record consisting of two consecutive hashes to the zone map
 func (list *ZoneList) AddRecord(previous string, next string) {
 	if record, exists := list.names[previous]; exists {
 		if record.next == next {
@@ -121,7 +126,8 @@ func (list *ZoneList) AddRecord(previous string, next string) {
 	// fmt.Printf("\rAdded %s followed by %s, coverage %s, hashes %d", previous, next, list.Coverage(), list.records)
 }
 
-func (list ZoneList) Names() (result []string) {
+// HashedNames returns the hashed names of the mapped records in a zone
+func (list ZoneList) HashedNames() (result []string) {
 	result = make([]string, 0, len(list.names))
 	for key := range list.names {
 		result = append(result, key)

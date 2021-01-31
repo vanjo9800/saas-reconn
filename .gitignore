@@ -3,3 +3,4 @@
 /temp/
 configs/credentials.yaml
 .vscode/
+.DS_Store
