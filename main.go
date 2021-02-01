@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"strings"
 
 	"saasreconn/pkg/api"
@@ -26,6 +27,7 @@ func passiveData(corporate string, db db.Database, providers map[string]provider
 func main() {
 
 	// Read flags
+	threads := flag.Int("threads", runtime.NumCPU(), "number of threads to use within the program")
 	enum := flag.Bool("enum", false, "a bool whether to enumerate domains from various online sources")
 	zonewalk := flag.Bool("zonewalk", false, "a bool whether to perform DNS zone-walking on existing providers and expand the passive database")
 	passive := flag.Bool("passive", false, "a bool whether to run a passive scan")
@@ -72,7 +74,7 @@ func main() {
 
 		for name, data := range saasProviders {
 			for _, domain := range data.Subdomain {
-				found, isDNSSEC := dns.ZoneWalkAttempt(domain, "", 53)
+				found, isDNSSEC := dns.ZoneWalkAttempt(domain, "1.1.1.1", 53, *threads, *noCache)
 				if isDNSSEC {
 					log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", name, domain, len(found))
 					diff, _ := resultsDatabase.UpdateProvider(name, domain, found)

@@ -4,6 +4,7 @@ import (
 	"encoding/base32"
 	"log"
 	"math/big"
+	"saasreconn/pkg/cache"
 
 	rbt "github.com/emirpasic/gods/trees/redblacktree"
 )
@@ -18,11 +19,8 @@ type ZoneRecord struct {
 // ZoneList is the instance of a LinkedList representing the zone map
 // It also has some helper parameters such as number of links, number of records and expected size
 type ZoneList struct {
-	links        int
-	expectedSize big.Int
-	names        *rbt.Tree
-	noPrevious   map[string]bool
-	noNext       map[string]bool
+	ExpectedSize big.Int
+	Names        *rbt.Tree
 }
 
 var sha1MaxSize *big.Int = new(big.Int).Exp(big.NewInt(2), big.NewInt(160), big.NewInt(0))
@@ -58,23 +56,41 @@ func coveredDistance(hash1 string, hash2 string) *big.Int {
 // Coverage returns an estimated coverage of the zone based on the number of current entries and the maximum projected number of entries
 func (list *ZoneList) Coverage() string {
 	result := new(big.Float)
-	return result.Quo(new(big.Float).SetInt(big.NewInt(list.records())), new(big.Float).SetInt(&list.expectedSize)).String()
+	return result.Quo(new(big.Float).SetInt(big.NewInt(list.records())), new(big.Float).SetInt(&list.ExpectedSize)).String()
 }
 
 // CreateZoneList constructs an empty zone list object
-func CreateZoneList() *ZoneList {
+func CreateZoneList(cachedZoneList cache.CachedZoneList) *ZoneList {
+	if len(cachedZoneList.Names) == 0 {
+		return &ZoneList{
+			ExpectedSize: *sha1MaxSize,
+			Names:        rbt.NewWithStringComparator(),
+		}
+	}
+
+	hashesTree := rbt.NewWithStringComparator()
+	for index := range cachedZoneList.Names {
+		hashesTree.Put(cachedZoneList.Names[index], ZoneRecord{
+			Name: cachedZoneList.Names[index],
+			Prev: cachedZoneList.Prev[index],
+			Next: cachedZoneList.Next[index],
+		})
+	}
+	expectedSize := new(big.Int)
+	expectedSize.SetString(cachedZoneList.ExpectedSize, 10)
+
 	return &ZoneList{
-		expectedSize: *sha1MaxSize,
-		names:        rbt.NewWithStringComparator(),
-		noPrevious:   map[string]bool{},
-		noNext:       map[string]bool{},
+		ExpectedSize: *expectedSize,
+		Names:        hashesTree,
 	}
 }
 
 // AddRecord adds an NSEC3 record consisting of two consecutive hashes to the zone map
 func (list *ZoneList) AddRecord(previous string, next string) {
-	if record, exists := list.names.Get(previous); exists {
-		record := record.(ZoneRecord)
+	var record ZoneRecord
+
+	if recordInterface, exists := list.Names.Get(previous); exists {
+		record = recordInterface.(ZoneRecord)
 		if record.Next == next {
 			return
 		}
@@ -83,20 +99,17 @@ func (list *ZoneList) AddRecord(previous string, next string) {
 			return
 		}
 		record.Next = next
-		list.names.Put(previous, record)
-		delete(list.noNext, previous)
 	} else {
-		record := ZoneRecord{
+		record = ZoneRecord{
 			Name: previous,
 			Prev: "",
 			Next: next,
 		}
-		list.names.Put(previous, record)
-		list.noPrevious[previous] = true
 	}
+	list.Names.Put(previous, record)
 
-	if record, exists := list.names.Get(next); exists {
-		record := record.(ZoneRecord)
+	if recordInterface, exists := list.Names.Get(next); exists {
+		record = recordInterface.(ZoneRecord)
 		if record.Prev == previous {
 			return
 		}
@@ -105,30 +118,25 @@ func (list *ZoneList) AddRecord(previous string, next string) {
 			return
 		}
 		record.Prev = previous
-		list.names.Put(next, record)
-		delete(list.noPrevious, next)
 	} else {
-		record := ZoneRecord{
+		record = ZoneRecord{
 			Name: next,
 			Prev: previous,
 			Next: "",
 		}
-		list.names.Put(next, record)
-		list.noNext[next] = true
 	}
+	list.Names.Put(next, record)
 
-	list.links++
-	list.expectedSize.Sub(&list.expectedSize, coveredDistance(previous, next))
-	// fmt.Printf("\rAdded %s followed by %s, coverage %s, hashes %d", previous, next, list.Coverage(), list.records)
+	list.ExpectedSize.Sub(&list.ExpectedSize, coveredDistance(previous, next))
 }
 
 func (list *ZoneList) records() int64 {
-	return int64(list.names.Size())
+	return int64(list.Names.Size())
 }
 
 // Closest returns the closest record found near a certain hash
 func (list ZoneList) Closest(hash string) ZoneRecord {
-	node, _ := list.names.Floor(hash)
+	node, _ := list.Names.Floor(hash)
 	if node == nil {
 		return ZoneRecord{
 			Name: "",
@@ -142,9 +150,27 @@ func (list ZoneList) Closest(hash string) ZoneRecord {
 // HashedNames returns the hashed names of the mapped records in a zone
 func (list ZoneList) HashedNames() (result []string) {
 	result = []string{}
-	for _, hash := range list.names.Keys() {
+	for _, hash := range list.Names.Keys() {
 		result = append(result, hash.(string))
 	}
 
 	return result
+}
+
+// ExportList exports a constructed ZoneList
+func (list ZoneList) ExportList() (exportList cache.CachedZoneList) {
+	exportList = cache.CachedZoneList{
+		Names:        []string{},
+		Prev:         []string{},
+		Next:         []string{},
+		ExpectedSize: list.ExpectedSize.String(),
+	}
+
+	for _, node := range list.Names.Values() {
+		exportList.Names = append(exportList.Names, node.(ZoneRecord).Name)
+		exportList.Prev = append(exportList.Prev, node.(ZoneRecord).Prev)
+		exportList.Next = append(exportList.Next, node.(ZoneRecord).Next)
+	}
+
+	return exportList
 }

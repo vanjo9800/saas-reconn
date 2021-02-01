@@ -16,16 +16,27 @@ type Cache struct {
 	initialised bool
 }
 
+// CachedDomainCheck is an instance of a subdomain check in our caching system
 type CachedDomainCheck struct {
 	Address  []string
 	PageBody bool
 	Updated  time.Time
 }
 
+// CachedZoneList is an instance of a cached ZoneList
+type CachedZoneList struct {
+	Names        []string
+	Prev         []string
+	Next         []string
+	ExpectedSize string
+}
+
+// CachedZoneWalk is an instance of a zonewalk in our caching system
 type CachedZoneWalk struct {
 	Salt       string
 	Iterations int
 	Hashes     []string
+	List       CachedZoneList
 	Guessed    map[string]string
 	Updated    time.Time
 }
@@ -90,7 +101,7 @@ func (cache *Cache) fetchCacheForDomainBase(domainBase string) (data map[string]
 
 	err = json.Unmarshal(byteData, &data)
 	if err != nil {
-		log.Println("Invalid cache data")
+		log.Printf("Invalid cache data %s", err)
 		return nil, err
 	}
 
@@ -106,7 +117,7 @@ func (cache *Cache) FetchCachedZoneWalk(domainBase string) (data CachedZoneWalk,
 
 	err = json.Unmarshal(byteData, &data)
 	if err != nil {
-		log.Println("Invalid cache data")
+		log.Printf("Invalid cache data %s", err)
 		return CachedZoneWalk{}, err
 	}
 
