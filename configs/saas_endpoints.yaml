@@ -1,3 +1,6 @@
+'Salesforce.com':
+  subdomain:
+    - 'salesforce.com'
 'Microsoft Outlook':
   urls:
     - 'outlook.office.com/owa/'

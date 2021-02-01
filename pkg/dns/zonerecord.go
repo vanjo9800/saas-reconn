@@ -4,25 +4,23 @@ import (
 	"encoding/base32"
 	"log"
 	"math/big"
-	"sort"
-)
 
-// rbt "github.com/emirpasic/gods/trees/redblacktree"
+	rbt "github.com/emirpasic/gods/trees/redblacktree"
+)
 
 // ZoneRecord is the object entity in the linked list zone map
 type ZoneRecord struct {
-	name string
-	prev string
-	next string
+	Name string
+	Prev string
+	Next string
 }
 
 // ZoneList is the instance of a LinkedList representing the zone map
 // It also has some helper parameters such as number of links, number of records and expected size
 type ZoneList struct {
-	records      int64
 	links        int
 	expectedSize big.Int
-	names        map[string]ZoneRecord
+	names        *rbt.Tree
 	noPrevious   map[string]bool
 	noNext       map[string]bool
 }
@@ -60,16 +58,14 @@ func coveredDistance(hash1 string, hash2 string) *big.Int {
 // Coverage returns an estimated coverage of the zone based on the number of current entries and the maximum projected number of entries
 func (list *ZoneList) Coverage() string {
 	result := new(big.Float)
-	return result.Quo(new(big.Float).SetInt(big.NewInt(list.records)), new(big.Float).SetInt(&list.expectedSize)).String()
+	return result.Quo(new(big.Float).SetInt(big.NewInt(list.records())), new(big.Float).SetInt(&list.expectedSize)).String()
 }
 
 // CreateZoneList constructs an empty zone list object
 func CreateZoneList() *ZoneList {
 	return &ZoneList{
-		records:      0,
-		links:        0,
 		expectedSize: *sha1MaxSize,
-		names:        map[string]ZoneRecord{},
+		names:        rbt.NewWithStringComparator(),
 		noPrevious:   map[string]bool{},
 		noNext:       map[string]bool{},
 	}
@@ -77,47 +73,47 @@ func CreateZoneList() *ZoneList {
 
 // AddRecord adds an NSEC3 record consisting of two consecutive hashes to the zone map
 func (list *ZoneList) AddRecord(previous string, next string) {
-	if record, exists := list.names[previous]; exists {
-		if record.next == next {
+	if record, exists := list.names.Get(previous); exists {
+		record := record.(ZoneRecord)
+		if record.Next == next {
 			return
 		}
-		if record.next != "" {
-			log.Printf("Inconsistent record found for %s: stored next %s, reported next %s", record.name, record.next, next)
+		if record.Next != "" {
+			log.Printf("Inconsistent record found for %s: stored next %s, reported next %s", record.Name, record.Next, next)
 			return
 		}
-		record.next = next
-		list.names[previous] = record
+		record.Next = next
+		list.names.Put(previous, record)
 		delete(list.noNext, previous)
 	} else {
 		record := ZoneRecord{
-			name: previous,
-			prev: "",
-			next: next,
+			Name: previous,
+			Prev: "",
+			Next: next,
 		}
-		list.names[previous] = record
-		list.records++
+		list.names.Put(previous, record)
 		list.noPrevious[previous] = true
 	}
 
-	if record, exists := list.names[next]; exists {
-		if record.prev == previous {
+	if record, exists := list.names.Get(next); exists {
+		record := record.(ZoneRecord)
+		if record.Prev == previous {
 			return
 		}
-		if record.prev != "" {
-			log.Printf("Inconsistent record found for %s: stored previous %s, reported previous %s", record.name, record.prev, previous)
+		if record.Prev != "" {
+			log.Printf("Inconsistent record found for %s: stored previous %s, reported previous %s", record.Name, record.Prev, previous)
 			return
 		}
-		record.prev = previous
-		list.names[next] = record
+		record.Prev = previous
+		list.names.Put(next, record)
 		delete(list.noPrevious, next)
 	} else {
 		record := ZoneRecord{
-			name: next,
-			prev: previous,
-			next: "",
+			Name: next,
+			Prev: previous,
+			Next: "",
 		}
-		list.names[next] = record
-		list.records++
+		list.names.Put(next, record)
 		list.noNext[next] = true
 	}
 
@@ -126,12 +122,29 @@ func (list *ZoneList) AddRecord(previous string, next string) {
 	// fmt.Printf("\rAdded %s followed by %s, coverage %s, hashes %d", previous, next, list.Coverage(), list.records)
 }
 
+func (list *ZoneList) records() int64 {
+	return int64(list.names.Size())
+}
+
+// Closest returns the closest record found near a certain hash
+func (list ZoneList) Closest(hash string) ZoneRecord {
+	node, _ := list.names.Floor(hash)
+	if node == nil {
+		return ZoneRecord{
+			Name: "",
+			Prev: "",
+			Next: "",
+		}
+	}
+	return node.Value.(ZoneRecord)
+}
+
 // HashedNames returns the hashed names of the mapped records in a zone
 func (list ZoneList) HashedNames() (result []string) {
-	result = make([]string, 0, len(list.names))
-	for key := range list.names {
-		result = append(result, key)
+	result = []string{}
+	for _, hash := range list.names.Keys() {
+		result = append(result, hash.(string))
 	}
-	sort.Strings(result)
+
 	return result
 }

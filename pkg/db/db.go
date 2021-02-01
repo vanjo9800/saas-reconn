@@ -13,6 +13,12 @@ type Database struct {
 	initialised bool
 }
 
+type UpdateChannel struct {
+	Name   string
+	Domain string
+	Found  []string
+}
+
 // NewDatabase constructs a new uninitialised database
 func NewDatabase() *Database {
 	return &Database{

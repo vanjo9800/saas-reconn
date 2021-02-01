@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"runtime"
 	"saasreconn/pkg/cache"
 	"sort"
 	"strconv"
@@ -22,12 +23,16 @@ const domainNameCharset string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST
 const wordlistName string = "resources/namelist.txt"
 
 var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+var concurrencyLevel = runtime.NumCPU()
 
 func randomStringWithCharset(length int, charset string) string {
 	var result strings.Builder
+
 	for i := 0; i < length; i++ {
-		result.WriteByte(charset[seededRand.Intn(len(charset))])
+		index := seededRand.Intn(len(charset))
+		result.WriteByte(charset[index])
 	}
+
 	return result.String()
 }
 
@@ -71,18 +76,18 @@ func detectDNSSECType(zone string, nameserver string) (recordType string, salt s
 		}
 	}
 
-	return "none", "", 0
+	return "", "", 0
 }
 
 // ZoneWalkAttempt tests whether a particular zone supports DNSSEC and attempts zone-walking it
-func ZoneWalkAttempt(zone string, nameserver string, port int) (names []string) {
+func ZoneWalkAttempt(zone string, nameserver string, port int) (names []string, isDNSSEC bool) {
 
 	// Default to system nameserver
 	if len(nameserver) == 0 {
 		conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
 		if err != nil {
 			log.Printf("[%s] Error getting nameserver %s", zone, err)
-			return names
+			return names, false
 		}
 		nameserver = conf.Servers[0]
 	}
@@ -101,8 +106,8 @@ func ZoneWalkAttempt(zone string, nameserver string, port int) (names []string) 
 	dnssecType, salt, iterations := detectDNSSECType(zone, nameserver)
 
 	if len(dnssecType) == 0 {
-		log.Printf("[%s] Not DNSSEC supported, skipping...", zone)
-		return names
+		// log.Printf("[%s] Not DNSSEC supported, skipping...", zone)
+		return names, false
 	}
 
 	if dnssecType == "nsec" {
@@ -141,10 +146,10 @@ func ZoneWalkAttempt(zone string, nameserver string, port int) (names []string) 
 		cachedZoneWalk.Updated = time.Now()
 		cachedResults.UpdateCachedZoneWalkData(zone, cachedZoneWalk)
 	} else {
-		log.Printf("[%s] Does not support DNSSEC", zone)
+		log.Printf("[%s] Unexpected DNSSEC record %s", zone, dnssecType)
 	}
 
-	return names
+	return names, true
 }
 
 func nsecZoneWalking(zone string, nameserver string) (names []string) {
@@ -189,44 +194,121 @@ func nsecZoneWalking(zone string, nameserver string) (names []string) {
 }
 
 func nsec3ZoneScan(zone string, nameserver string, salt string, iterations int) (hashes []string) {
-	hashTries := 200 //100000
+	batchSize := 100
+	bufferSize := 10
+
 	zoneRecord := CreateZoneList()
 
-	for i := 0; i < hashTries; i++ {
-		randomDomain := randomStringWithCharset(27, domainNameCharset)
+	accumulatedHashes := make(chan []ZoneRecord, bufferSize)
+	pendingLookups := make(chan string, batchSize)
+	pendingResults := make(chan *dns.Msg, bufferSize)
 
-		resp, _, err := dnssecQuery(nameserver, fmt.Sprintf("%s.%s", randomDomain, zone), dns.TypeA)
-		if err != nil {
-			log.Printf("[%s] Failed DNS lookup for %s.%s", zone, randomDomain, zone)
-			continue
-		}
+	fmt.Printf("[%s] Starting zone enumeration\n", zone)
+	concurrencyHashes := make(chan bool, concurrencyLevel)
+	concurrencyLookups := make(chan bool, concurrencyLevel)
+	concurrencyUpdates := make(chan bool, concurrencyLevel)
+	for i := 0; i < concurrencyLevel; i++ {
+		concurrencyHashes <- true
+		concurrencyLookups <- true
+		concurrencyUpdates <- true
+	}
 
-		for _, rr := range resp.Ns {
-			if rr.Header().Rrtype == dns.TypeNSEC3 {
-				algorithm := int(rr.(*dns.NSEC3).Hash)
-				if algorithm != 1 {
-					log.Printf("[%s] Unsupported NSEC3 hashing algorithm %d", zone, algorithm)
-					return zoneRecord.HashedNames()
-				}
+	timeout := time.After(10 * time.Second)
+	tick := time.Tick(500 * time.Millisecond)
+	start := time.Now()
+	for {
+		go func() {
+			for {
+				<-concurrencyHashes
+				go func(zone string) {
+					for hashCount := 0; hashCount < batchSize; hashCount++ {
+						randomDomain := fmt.Sprintf("%s.%s", randomStringWithCharset(27, domainNameCharset), zone)
+						randomDomainHash := dns.HashName(randomDomain, dns.SHA1, uint16(iterations), salt)
 
-				usedIterations := int(rr.(*dns.NSEC3).Iterations)
-				usedSalt := rr.(*dns.NSEC3).Salt
-				if usedIterations != iterations || usedSalt != salt {
-					log.Printf("[%s] Zone changes its salt, or number of iterations, aborting...", zone)
-					return zoneRecord.HashedNames()
-				}
+						closestHash := zoneRecord.Closest(randomDomainHash)
+						// Do not peform a DNS query if we already have connected the zone map for the new domain
+						if closestHash.Next != "" && closestHash.Next >= randomDomainHash {
+							continue
+						}
 
-				headerHash := rr.(*dns.NSEC3).Header().Name
-				headerHash = strings.ToUpper(strings.ReplaceAll(headerHash, "."+zone, ""))
-				fmt.Printf("\rHash %d: Adding %s and %s", i, headerHash, rr.(*dns.NSEC3).NextDomain)
-				zoneRecord.AddRecord(headerHash, rr.(*dns.NSEC3).NextDomain)
+						pendingLookups <- randomDomain
+					}
+					concurrencyHashes <- true
+				}(zone)
+			}
+		}()
+		go func() {
+			for {
+				<-concurrencyLookups
+				go func(nameserver string) {
+					domainLookup := <-pendingLookups
+					resp, _, err := dnssecQuery(nameserver, domainLookup, dns.TypeA)
+					if err != nil {
+						log.Printf("Failed DNS lookup for %s: %s", domainLookup, err)
+						return
+					}
+					pendingResults <- resp
+					concurrencyLookups <- true
+				}(nameserver)
+			}
+		}()
+		go func() {
+			for {
+				<-concurrencyUpdates
+				go func(zone string) {
+					fetchedHashes := []ZoneRecord{}
+					results := <-pendingResults
+					for _, rr := range results.Ns {
+						if rr.Header().Rrtype == dns.TypeNSEC3 {
+							algorithm := int(rr.(*dns.NSEC3).Hash)
+							if algorithm != 1 {
+								log.Printf("[%s] Unsupported NSEC3 hashing algorithm %d", zone, algorithm)
+								return
+							}
+
+							usedIterations := int(rr.(*dns.NSEC3).Iterations)
+							usedSalt := rr.(*dns.NSEC3).Salt
+							if usedIterations != iterations || usedSalt != salt {
+								log.Printf("[%s] Zone changes its salt, or number of iterations, aborting...", zone)
+								return
+							}
+
+							headerHash := rr.(*dns.NSEC3).Header().Name
+							headerHash = strings.ToUpper(strings.ReplaceAll(headerHash, "."+zone, ""))
+							nextOrderHash := rr.(*dns.NSEC3).NextDomain
+
+							closestHash := zoneRecord.Closest(headerHash)
+							// Do not add hash if it is already in the database
+							if closestHash.Next != "" && closestHash.Next == nextOrderHash {
+								continue
+							}
+							fetchedHashes = append(fetchedHashes, ZoneRecord{
+								Name: headerHash,
+								Prev: headerHash,
+								Next: nextOrderHash,
+							})
+						}
+					}
+					accumulatedHashes <- fetchedHashes
+					concurrencyUpdates <- true
+				}(zone)
+			}
+		}()
+
+		select {
+		case <-timeout:
+			return zoneRecord.HashedNames()
+		case <-tick:
+			fmt.Printf("\n[%s] Found %d hashes with coverage %s\n", zone, zoneRecord.records(), zoneRecord.Coverage())
+		default:
+			batchRecords := <-accumulatedHashes
+			fmt.Printf("\r[%s] Speed %dH/s", zone, int(float64(len(batchRecords))/time.Since(start).Seconds()))
+			start = time.Now()
+			for _, record := range batchRecords {
+				zoneRecord.AddRecord(record.Prev, record.Next)
 			}
 		}
 	}
-
-	log.Printf("\n[%s] Found %d hashes with coverage %s", zone, zoneRecord.records, zoneRecord.Coverage())
-
-	return zoneRecord.HashedNames()
 }
 
 func reverseNSEC3Hashes(hashes []string, zone string, salt string, iterations int) (mapping map[string]string) {
@@ -307,6 +389,7 @@ func dnssecQuery(nameserver string, queryName string, queryType uint16) (respons
 	client := new(dns.Client)
 	client.Timeout = 4000 * time.Millisecond
 	client.Net = "udp"
+	client.UDPSize = 12320
 	response, rtt, err = client.Exchange(message, nameserver)
 
 	if err != nil {

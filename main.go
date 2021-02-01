@@ -31,14 +31,14 @@ func main() {
 	passive := flag.Bool("passive", false, "a bool whether to run a passive scan")
 	noCache := flag.Bool("no-cache", false, "a bool whether to use pre-existing")
 	dataProviders := flag.String("dataproviders", "Crt.sh", "a comma separated list of passive data providers to use (default Crt.sh)")
-	endpoints := flag.String("endpoints-config", "configs/saas_endpoints.yaml", "a SaaS providers endpoints file")
+	endpointsConfig := flag.String("endpoints-config", "configs/saas_endpoints.yaml", "a SaaS providers endpoints file")
 	apikey := flag.String("apikey", "", "VirusTotal API key")
 	// apiCredentials := flag.String("api-credentials", "configs/credentials.yaml", "online APIs credentials")
 	flag.Parse()
 
 	// Database setup
 	resultsDatabase := db.NewDatabase()
-	saasProviders, err := provider.ReadProviders(*endpoints)
+	saasProviders, err := provider.ReadProviders(*endpointsConfig)
 	if err != nil {
 		log.Fatal("Could not fetch SaaS providers")
 	}
@@ -46,10 +46,10 @@ func main() {
 	if *enum {
 		log.Println("Updating existing database")
 
-		log.Println("Updating JSON files")
 		for name, data := range saasProviders {
 			for _, domain := range data.Subdomain {
 				found := []string{}
+
 				if strings.Contains(*dataProviders, "Crt.sh") {
 					found = append(found, api.CrtShQuery(domain)...)
 				}
@@ -68,19 +68,23 @@ func main() {
 	}
 
 	if *zonewalk {
-		// for name, provider := range saasProviders {
-		// 	for _, subdomain := range provider.Subdomain {
-		// 		foundNames := dns.ZoneWalkAttempt(subdomain, "", 53)
-		// 		log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", name, subdomain, len(foundNames))
-		// 		diff, _ := resultsDatabase.UpdateProvider(name, subdomain, foundNames)
-		// 		diff.Dump()
-		// 	}
-		// }
-		foundNames := dns.ZoneWalkAttempt("salesforce.com", "8.8.8.8", 53)
-		log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", "Salesforce", "salesforce.com", len(foundNames))
-		for _, name := range foundNames {
-			log.Printf("- %s", name)
+		log.Println("Performing zone-walking")
+
+		for name, data := range saasProviders {
+			for _, domain := range data.Subdomain {
+				found, isDNSSEC := dns.ZoneWalkAttempt(domain, "", 53)
+				if isDNSSEC {
+					log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", name, domain, len(found))
+					diff, _ := resultsDatabase.UpdateProvider(name, domain, found)
+					diff.Dump()
+				}
+			}
 		}
+		// foundNames := dns.ZoneWalkAttempt("salesforce.com", "8.8.8.8", 53)
+		// log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", "Salesforce", "salesforce.com", len(foundNames))
+		// for _, name := range foundNames {
+		// 	log.Printf("- %s", name)
+		// }
 		// // foundNames := dns.ZoneWalkAttempt("getdnsapi.net", "8.8.8.8", 53)
 		// // diff, _ := resultsDatabase.UpdateProvider("GetDNSApi_2", "getdnsapi.net", foundNames)
 		// // diff.Dump()

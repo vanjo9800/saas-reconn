@@ -30,7 +30,7 @@ func ProviderDataFromJSON(data []byte) (providerData *ProviderData, err error) {
 	providerData = new(ProviderData)
 	err = json.Unmarshal(data, &providerData)
 	if err != nil {
-		log.Fatal("Invalid provider data")
+		log.Printf("[%s] Invalid provider data %s", providerData.ProviderName, err)
 		return EmptyProviderData(""), err
 	}
 
