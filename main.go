@@ -27,7 +27,8 @@ func passiveData(corporate string, db db.Database, providers map[string]provider
 func main() {
 
 	// Read flags
-	threads := flag.Int("threads", runtime.NumCPU(), "number of threads to use within the program")
+	threads := flag.Int("threads", runtime.NumCPU(), "number of threads to use within the program (default is the logical number number of processors")
+	timeout := flag.Int("timeout", 60, "number of seconds to run the zonewalk mapping for (default is 60)")
 	enum := flag.Bool("enum", false, "a bool whether to enumerate domains from various online sources")
 	zonewalk := flag.Bool("zonewalk", false, "a bool whether to perform DNS zone-walking on existing providers and expand the passive database")
 	passive := flag.Bool("passive", false, "a bool whether to run a passive scan")
@@ -72,24 +73,19 @@ func main() {
 	if *zonewalk {
 		log.Println("Performing zone-walking")
 
+		nameservers := []string{"208.67.222.222", "1.1.1.1", "8.8.8.8", "8.8.4.4"}
 		for name, data := range saasProviders {
 			for _, domain := range data.Subdomain {
-				found, isDNSSEC := dns.ZoneWalkAttempt(domain, "1.1.1.1", 53, *threads, *noCache)
-				if isDNSSEC {
-					log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", name, domain, len(found))
-					diff, _ := resultsDatabase.UpdateProvider(name, domain, found)
-					diff.Dump()
+				for _, nameserver := range nameservers {
+					found, isDNSSEC := dns.ZoneWalkAttempt(domain, nameserver, 53, *threads, *timeout, *noCache)
+					if isDNSSEC {
+						log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", name, domain, len(found))
+						diff, _ := resultsDatabase.UpdateProvider(name, domain, found)
+						diff.Dump()
+					}
 				}
 			}
 		}
-		// foundNames := dns.ZoneWalkAttempt("salesforce.com", "8.8.8.8", 53)
-		// log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", "Salesforce", "salesforce.com", len(foundNames))
-		// for _, name := range foundNames {
-		// 	log.Printf("- %s", name)
-		// }
-		// // foundNames := dns.ZoneWalkAttempt("getdnsapi.net", "8.8.8.8", 53)
-		// // diff, _ := resultsDatabase.UpdateProvider("GetDNSApi_2", "getdnsapi.net", foundNames)
-		// // diff.Dump()
 		os.Exit(0)
 	}
 
@@ -129,6 +125,12 @@ func main() {
 					}
 					validNames[subdomain] = possibleNames.Validate(*noCache)
 					log.Printf("[%s] %d prefixes, %d valid", name, len(possibleNames.Prefixes), len(validNames[subdomain].Prefixes))
+					updateDatabase := []string{}
+					for _, prefix := range validNames[subdomain].Prefixes {
+						updateDatabase = append(updateDatabase, fmt.Sprintf("%s.%s", prefix, validNames[subdomain].Base.GetBase()))
+					}
+					diff, _ := resultsDatabase.UpdateProvider(name, subdomain, updateDatabase)
+					diff.Dump()
 				}
 				for _, url := range provider.Urls {
 					possibleNames := checks.SubdomainRange{

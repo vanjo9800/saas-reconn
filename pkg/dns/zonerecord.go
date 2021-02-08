@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/big"
 	"saasreconn/pkg/cache"
+	"sync"
 
 	rbt "github.com/emirpasic/gods/trees/redblacktree"
 )
@@ -21,6 +22,7 @@ type ZoneRecord struct {
 type ZoneList struct {
 	ExpectedSize big.Int
 	Names        *rbt.Tree
+	addingMutex  sync.Mutex
 }
 
 var sha1MaxSize *big.Int = new(big.Int).Exp(big.NewInt(2), big.NewInt(160), big.NewInt(0))
@@ -106,7 +108,9 @@ func (list *ZoneList) AddRecord(previous string, next string) {
 			Next: next,
 		}
 	}
+	list.addingMutex.Lock()
 	list.Names.Put(previous, record)
+	list.addingMutex.Unlock()
 
 	if recordInterface, exists := list.Names.Get(next); exists {
 		record = recordInterface.(ZoneRecord)
@@ -125,9 +129,13 @@ func (list *ZoneList) AddRecord(previous string, next string) {
 			Next: "",
 		}
 	}
+	list.addingMutex.Lock()
 	list.Names.Put(next, record)
+	list.addingMutex.Unlock()
 
+	list.addingMutex.Lock()
 	list.ExpectedSize.Sub(&list.ExpectedSize, coveredDistance(previous, next))
+	list.addingMutex.Unlock()
 }
 
 func (list *ZoneList) records() int64 {

@@ -12,12 +12,12 @@ type DataDiff struct {
 
 // Dump is a helper method which prints the whole difference comparison of the data
 func (diff *DataDiff) Dump() {
+	if len(diff.added) == 0 {
+		return
+	}
+
 	log.Println("Added:")
 	for _, domain := range diff.added {
 		log.Println("\t+ " + domain)
 	}
-	// log.Println("Removed:")
-	// for _, domain := range diff.removed {
-	// 	log.Println("\t- " + domain)
-	// }
 }

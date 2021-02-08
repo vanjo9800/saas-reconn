@@ -79,14 +79,13 @@ func (cache *Cache) Initialise(path string) bool {
 
 /* FETCHING */
 
+// FetchCachedDomainCheckResults fetches a cached result for a domain name from the cache database
 func (cache *Cache) FetchCachedDomainCheckResults(domainName string, domainBase string) (cachedDomain *CachedDomainCheck, err error) {
 	cachedData, err := cache.fetchCacheForDomainBase(domainBase)
-	if err != nil {
-		return nil, errors.New("No previous cached data")
-	}
-
-	if cachedValue, ok := cachedData[domainName]; ok {
-		return &cachedValue, nil
+	if err == nil {
+		if cachedValue, ok := cachedData[domainName]; ok {
+			return &cachedValue, nil
+		}
 	}
 
 	return nil, errors.New("No previous cached data")
@@ -108,17 +107,34 @@ func (cache *Cache) fetchCacheForDomainBase(domainBase string) (data map[string]
 	return data, nil
 }
 
-func (cache *Cache) FetchCachedZoneWalk(domainBase string) (data CachedZoneWalk, err error) {
-	byteData, err := cache.fetchFromCache("zonewalk", domainBase)
+// FetchCachedZoneWalk fetches a zonewalk specified by zone, salt and iterations, or returns an empty object
+func (cache *Cache) FetchCachedZoneWalk(zone string, salt string, iterations int) (data CachedZoneWalk, err error) {
+	zoneWalksForZone, err := cache.fetchZoneWalkForZone(zone)
+	if err == nil {
+		if cachedValue, ok := zoneWalksForZone[fmt.Sprintf("%s:%d", salt, iterations)]; ok {
+			return cachedValue, nil
+		}
+		for _, zoneWalk := range zoneWalksForZone {
+			if zoneWalk.Salt == salt && zoneWalk.Iterations == iterations {
+				return zoneWalk, nil
+			}
+		}
+	}
+
+	return CachedZoneWalk{}, errors.New("No previous cache")
+}
+
+func (cache *Cache) fetchZoneWalkForZone(zone string) (data map[string]CachedZoneWalk, err error) {
+	byteData, err := cache.fetchFromCache("zonewalk", zone)
 	if err != nil {
-		log.Printf("[%s] Could not find existing cache data %s", domainBase, err)
-		return CachedZoneWalk{}, nil
+		log.Printf("[%s] Could not find existing cache data", zone)
+		return map[string]CachedZoneWalk{}, nil
 	}
 
 	err = json.Unmarshal(byteData, &data)
 	if err != nil {
 		log.Printf("Invalid cache data %s", err)
-		return CachedZoneWalk{}, err
+		return nil, err
 	}
 
 	return data, nil
@@ -134,7 +150,7 @@ func (cache *Cache) fetchFromCache(path string, filename string) (data []byte, e
 	byteData, err := ioutil.ReadFile(fmt.Sprintf("cache/%s/%s.json", path, nameToPath(filename)))
 	if err != nil {
 		log.Printf("[%s/%s] Could not find existing cache data %s", path, filename, err)
-		return []byte{}, nil
+		return []byte("{}"), nil
 	}
 
 	return byteData, nil
@@ -145,43 +161,56 @@ func (cache *Cache) fetchFromCache(path string, filename string) (data []byte, e
 func (cache *Cache) UpdateCachedDomainCheckData(domainName string, domainBase string, cachedSubdomain CachedDomainCheck) {
 	cachedData, err := cache.fetchCacheForDomainBase(domainBase)
 	if err != nil {
-		log.Fatalf("[%s] There was an error fetching cached data", domainBase)
+		log.Printf("[%s] There was an error fetching cached data", domainBase)
+		return
 	}
 
 	cachedData[domainName] = cachedSubdomain
 
 	jsonOutput, err := json.Marshal(cachedData)
 	if err != nil {
-		log.Fatalf("[%s] Could not convert to JSON", domainBase)
+		log.Printf("[%s] Could not convert to JSON", domainBase)
+		return
 	}
 
 	err = cache.saveCachedData("checks", domainBase, jsonOutput)
 	if err != nil {
-		log.Fatalf("[%s] Could not update cached data", domainBase)
+		log.Printf("[%s] Could not update cached data", domainBase)
+		return
 	}
 }
 
-func (cache *Cache) UpdateCachedZoneWalkData(domainBase string, zoneWalkData CachedZoneWalk) {
-	jsonOutput, err := json.Marshal(zoneWalkData)
+func (cache *Cache) UpdateCachedZoneWalkData(zone string, zoneWalkData CachedZoneWalk) {
+	zoneWalksForZone, err := cache.fetchZoneWalkForZone(zone)
 	if err != nil {
-		log.Fatalf("[%s] Could not convert to JSON", domainBase)
+		log.Printf("[%s] There was an error fetching cached data", zone)
+		return
 	}
 
-	err = cache.saveCachedData("zonewalk", domainBase, jsonOutput)
+	zoneWalksForZone[fmt.Sprintf("%s:%d", zoneWalkData.Salt, zoneWalkData.Iterations)] = zoneWalkData
+
+	jsonOutput, err := json.Marshal(zoneWalksForZone)
 	if err != nil {
-		log.Fatalf("[%s] Could not update cached data", domainBase)
+		log.Printf("[%s] Could not convert to JSON", zone)
+		return
+	}
+
+	err = cache.saveCachedData("zonewalk", zone, jsonOutput)
+	if err != nil {
+		log.Printf("[%s] Could not update cached data", zone)
+		return
 	}
 }
 
 func (cache *Cache) saveCachedData(path string, filename string, data []byte) error {
 	success := cache.Initialise(path)
 	if !success {
-		log.Fatalf("[%s/%s] Could not initialise cache", path, filename)
+		return errors.New("Could not initialise cache")
 	}
 
 	err := ioutil.WriteFile(fmt.Sprintf("cache/%s/%s.json", path, nameToPath(filename)), data, 0755)
 	if err != nil {
-		log.Fatalf("[%s/%s] Failed to write cached data", path, filename)
+		return errors.New("Failed to write back to cache")
 	}
 
 	return nil
