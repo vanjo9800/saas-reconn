@@ -1,5 +1,6 @@
 /data/
 /temp/
 configs/credentials.yaml
+resources/wordlists/
 .vscode/
 .DS_Store
