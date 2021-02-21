@@ -87,6 +87,66 @@ func CreateZoneList(cachedZoneList cache.CachedZoneList) *ZoneList {
 	}
 }
 
+func (list *ZoneList) updateNextRecord(record ZoneRecord, newNext string) {
+	list.addingMutex.Lock()
+	log.Printf("Record update found for %s: old next %s, new next %s", record.Name, record.Next, newNext)
+	if record.Next > newNext {
+		log.Printf("A record has been added: %s", newNext)
+	} else {
+		log.Printf("A record has been removed: %s", newNext)
+	}
+	var toRemove []string
+	current := record
+	for current.Next != "" && current.Next < newNext {
+		toRemove = append(toRemove, current.Next)
+		currentData, _ := list.Names.Get(current.Next)
+		current = currentData.(ZoneRecord)
+	}
+	lastRecordedNameInChain := current.Name
+	if current.Next != "" {
+		lastRecordedNameInChain = current.Next
+		nextRecordData, _ := list.Names.Get(current.Next)
+		nextRecord := nextRecordData.(ZoneRecord)
+		nextRecord.Prev = ""
+		list.Names.Put(nextRecord.Name, nextRecord)
+	}
+	list.ExpectedSize.Add(&list.ExpectedSize, coveredDistance(current.Name, lastRecordedNameInChain))
+	for i := range toRemove {
+		list.Names.Remove(toRemove[i])
+	}
+	list.addingMutex.Unlock()
+}
+
+func (list *ZoneList) updatePrevRecord(record ZoneRecord, newPrev string) {
+	list.addingMutex.Lock()
+	log.Printf("Record update found for %s: old previous %s, new previous %s", record.Name, record.Prev, newPrev)
+	if record.Prev < newPrev {
+		log.Printf("A record has been added: %s", newPrev)
+	} else {
+		log.Printf("A record has been removed: %s", newPrev)
+	}
+	var toRemove []string
+	current := record
+	for current.Prev != "" && current.Prev > newPrev {
+		toRemove = append(toRemove, current.Prev)
+		currentData, _ := list.Names.Get(current.Prev)
+		current = currentData.(ZoneRecord)
+	}
+	lastRecordedNameInChain := current.Name
+	if current.Prev != "" {
+		lastRecordedNameInChain = current.Prev
+		prevRecordData, _ := list.Names.Get(current.Prev)
+		prevRecord := prevRecordData.(ZoneRecord)
+		prevRecord.Next = ""
+		list.Names.Put(prevRecord.Name, prevRecord)
+	}
+	list.ExpectedSize.Add(&list.ExpectedSize, coveredDistance(lastRecordedNameInChain, current.Name))
+	for i := range toRemove {
+		list.Names.Remove(toRemove[i])
+	}
+	list.addingMutex.Unlock()
+}
+
 // AddRecord adds an NSEC3 record consisting of two consecutive hashes to the zone map
 func (list *ZoneList) AddRecord(previous string, next string) {
 	var record ZoneRecord
@@ -97,8 +157,7 @@ func (list *ZoneList) AddRecord(previous string, next string) {
 			return
 		}
 		if record.Next != "" {
-			log.Printf("Inconsistent record found for %s: stored next %s, reported next %s", record.Name, record.Next, next)
-			return
+			list.updateNextRecord(record, next)
 		}
 		record.Next = next
 	} else {
@@ -118,8 +177,7 @@ func (list *ZoneList) AddRecord(previous string, next string) {
 			return
 		}
 		if record.Prev != "" {
-			log.Printf("Inconsistent record found for %s: stored previous %s, reported previous %s", record.Name, record.Prev, previous)
-			return
+			list.updatePrevRecord(record, previous)
 		}
 		record.Prev = previous
 	} else {
@@ -143,7 +201,7 @@ func (list *ZoneList) records() int64 {
 }
 
 // Closest returns the closest record found near a certain hash
-func (list ZoneList) Closest(hash string) ZoneRecord {
+func (list *ZoneList) Closest(hash string) ZoneRecord {
 	node, _ := list.Names.Floor(hash)
 	if node == nil {
 		return ZoneRecord{
@@ -156,7 +214,7 @@ func (list ZoneList) Closest(hash string) ZoneRecord {
 }
 
 // HashedNames returns the hashed names of the mapped records in a zone
-func (list ZoneList) HashedNames() (result []string) {
+func (list *ZoneList) HashedNames() (result []string) {
 	result = []string{}
 	for _, hash := range list.Names.Keys() {
 		result = append(result, hash.(string))
@@ -166,7 +224,7 @@ func (list ZoneList) HashedNames() (result []string) {
 }
 
 // ExportList exports a constructed ZoneList
-func (list ZoneList) ExportList() (exportList cache.CachedZoneList) {
+func (list *ZoneList) ExportList() (exportList cache.CachedZoneList) {
 	exportList = cache.CachedZoneList{
 		Names:        []string{},
 		Prev:         []string{},

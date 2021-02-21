@@ -14,6 +14,7 @@ import (
 // Cache is our intermediate data storage class
 type Cache struct {
 	initialised bool
+	root        string
 }
 
 // CachedDomainCheck is an instance of a subdomain check in our caching system
@@ -57,6 +58,7 @@ func nameToPath(filename string) string {
 func NewCache() *Cache {
 	return &Cache{
 		initialised: false,
+		root:        "data/cache/",
 	}
 }
 
@@ -64,8 +66,8 @@ func NewCache() *Cache {
 func (cache *Cache) Initialise(path string) bool {
 
 	if !cache.initialised {
-		if _, err := os.Stat(fmt.Sprintf("cache/%s/", path)); os.IsNotExist(err) {
-			err := os.MkdirAll(fmt.Sprintf("cache/%s/", path), 0755)
+		if _, err := os.Stat(fmt.Sprintf("%s/%s/", cache.root, path)); os.IsNotExist(err) {
+			err := os.MkdirAll(fmt.Sprintf("%s/%s/", cache.root, path), 0755)
 			if err != nil {
 				log.Fatal(err)
 				return false
@@ -147,7 +149,7 @@ func (cache *Cache) fetchFromCache(path string, filename string) (data []byte, e
 		return nil, errors.New("Could not initialise cache")
 	}
 
-	byteData, err := ioutil.ReadFile(fmt.Sprintf("cache/%s/%s.json", path, nameToPath(filename)))
+	byteData, err := ioutil.ReadFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, nameToPath(filename)))
 	if err != nil {
 		log.Printf("[%s/%s] Could not find existing cache data %s", path, filename, err)
 		return []byte("{}"), nil
@@ -208,7 +210,7 @@ func (cache *Cache) saveCachedData(path string, filename string, data []byte) er
 		return errors.New("Could not initialise cache")
 	}
 
-	err := ioutil.WriteFile(fmt.Sprintf("cache/%s/%s.json", path, nameToPath(filename)), data, 0755)
+	err := ioutil.WriteFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, nameToPath(filename)), data, 0755)
 	if err != nil {
 		return errors.New("Failed to write back to cache")
 	}
@@ -218,15 +220,17 @@ func (cache *Cache) saveCachedData(path string, filename string, data []byte) er
 
 /* DELETING */
 
+// DeleteDomainCheckCache deletes a cache file from domain checking
 func (cache *Cache) DeleteDomainCheckCache(domainBase string) bool {
-	return cache.DeleteFile("checks", domainBase)
+	return cache.deleteFile("checks", domainBase)
 }
 
+// DeleteZoneWalkCache deletes a cache file from zone-walking
 func (cache *Cache) DeleteZoneWalkCache(domainBase string) bool {
-	return cache.DeleteFile("zonewalk", domainBase)
+	return cache.deleteFile("zonewalk", domainBase)
 }
 
-func (cache *Cache) DeleteFile(path string, filename string) bool {
+func (cache *Cache) deleteFile(path string, filename string) bool {
 	success := cache.Initialise(path)
 	if !success {
 		log.Fatal("Could not initialise cache")
@@ -234,8 +238,8 @@ func (cache *Cache) DeleteFile(path string, filename string) bool {
 	}
 
 	// Check if cached data exists and delete only if there
-	if _, err := os.Stat(fmt.Sprintf("cache/%s/", path)); os.IsExist(err) {
-		err := os.Remove(fmt.Sprintf("cache/%s/%s.json", path, nameToPath(filename)))
+	if _, err := os.Stat(fmt.Sprintf("%s/%s/", cache.root, path)); os.IsExist(err) {
+		err := os.Remove(fmt.Sprintf("%s/%s/%s.json", cache.root, path, nameToPath(filename)))
 		if err != nil {
 			log.Fatal("Could not detele data file")
 			return false

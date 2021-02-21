@@ -1,5 +1,4 @@
-/db/
-/cache/
+/data/
 /temp/
 configs/credentials.yaml
 .vscode/

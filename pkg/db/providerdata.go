@@ -13,7 +13,37 @@ import (
 type ProviderData struct {
 	ProviderName string
 	Collected    time.Time
-	Subdomains   map[string][]string
+	Subdomains   map[string][]Subdomain
+}
+
+// Subdomain is a class of stored subdomain entry with a name and a confidence score
+type Subdomain struct {
+	Name       string
+	Confidence int
+}
+
+// SubdomainList is an instance of list of Subdomains with defined comparison functions
+type SubdomainList []Subdomain
+
+func (l SubdomainList) Len() int { return len(l) }
+func (l SubdomainList) Less(i, j int) bool {
+	if l[i].Confidence == l[j].Confidence {
+		return l[i].Name < l[j].Name
+	}
+	return l[i].Confidence > l[j].Confidence
+}
+func (l SubdomainList) Swap(i, j int) { l[i], l[j] = l[j], l[i] }
+
+// MapStringNamestoSubdomain applies a certain confidence score to a string array of subdomains
+func MapStringNamesToSubdomain(domainNames []string, confidenceScore int) (domains []Subdomain) {
+	for _, domainName := range domainNames {
+		domains = append(domains, Subdomain{
+			Name:       domainName,
+			Confidence: confidenceScore,
+		})
+	}
+
+	return domains
 }
 
 // EmptyProviderData returns an empty data object, usually when we have no data stored for the provider
@@ -21,7 +51,7 @@ func EmptyProviderData(providerName string) *ProviderData {
 	return &ProviderData{
 		ProviderName: providerName,
 		Collected:    time.Now(),
-		Subdomains:   make(map[string][]string),
+		Subdomains:   make(map[string][]Subdomain),
 	}
 }
 
@@ -50,11 +80,11 @@ func (data *ProviderData) ToJSON() (bytes []byte, err error) {
 
 func (data *ProviderData) query(domainPattern string) *ProviderData {
 
-	domainsMap := make(map[string][]string)
+	domainsMap := make(map[string][]Subdomain)
 	for rootDomain, subdomains := range data.Subdomains {
-		matchingDomains := []string{}
+		matchingDomains := []Subdomain{}
 		for _, domain := range subdomains {
-			matched, _ := regexp.MatchString(domainPattern, domain)
+			matched, _ := regexp.MatchString(domainPattern, domain.Name)
 			if matched {
 				matchingDomains = append(matchingDomains, domain)
 			}
@@ -69,39 +99,34 @@ func (data *ProviderData) query(domainPattern string) *ProviderData {
 	}
 }
 
-func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains []string) *DataDiff {
+func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains []Subdomain) *DataDiff {
 
+	var addedDomains []Subdomain
 	uniqueDomains := make(map[string]int)
 
 	for _, domain := range data.Subdomains[rootDomain] {
-		uniqueDomains[domain] = 1
+		uniqueDomains[domain.Name] = domain.Confidence
 	}
 	for _, domain := range newSubdomains {
-		val, _ := uniqueDomains[domain]
-		uniqueDomains[domain] = val + 2
-	}
-
-	addedDomains := []string{}
-	removedDomains := []string{}
-	allDomains := []string{}
-	for domain, value := range uniqueDomains {
-		if value == 2 {
+		if _, ok := uniqueDomains[domain.Name]; !ok {
 			addedDomains = append(addedDomains, domain)
 		}
-		if value == 1 {
-			removedDomains = append(removedDomains, domain)
-		}
-		allDomains = append(allDomains, domain)
+		uniqueDomains[domain.Name] = domain.Confidence
 	}
 
-	sort.Strings(allDomains)
-	sort.Strings(addedDomains)
-	sort.Strings(removedDomains)
-	data.Subdomains[rootDomain] = allDomains
+	data.Subdomains[rootDomain] = []Subdomain{}
+	for name, confidence := range uniqueDomains {
+		data.Subdomains[rootDomain] = append(data.Subdomains[rootDomain], Subdomain{
+			Name:       name,
+			Confidence: confidence,
+		})
+	}
+
+	sort.Sort(SubdomainList(data.Subdomains[rootDomain]))
+	sort.Sort(SubdomainList(addedDomains))
 
 	return &DataDiff{
-		added:   addedDomains,
-		removed: removedDomains,
+		added: addedDomains,
 	}
 }
 
@@ -110,9 +135,9 @@ func (data *ProviderData) AsString(onlyPrefix bool) (subdomains []string) {
 	for subdomain, domainsArray := range data.Subdomains {
 		for _, domain := range domainsArray {
 			if onlyPrefix {
-				subdomains = append(subdomains, strings.Trim(domain, subdomain))
+				subdomains = append(subdomains, strings.Trim(domain.Name, subdomain))
 			} else {
-				subdomains = append(subdomains, domain)
+				subdomains = append(subdomains, domain.Name)
 			}
 		}
 	}
@@ -134,7 +159,7 @@ func (data *ProviderData) Dump() {
 		}
 		log.Println("  - " + subdomain)
 		for _, domain := range domainsArray {
-			log.Println("    - " + domain)
+			log.Printf("    - %s, conf. %d", domain.Name, domain.Confidence)
 		}
 	}
 }

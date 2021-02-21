@@ -6,8 +6,7 @@ import (
 
 // DataDiff is a class for reporting difference in provider data during updates
 type DataDiff struct {
-	added   []string
-	removed []string
+	added []Subdomain
 }
 
 // Dump is a helper method which prints the whole difference comparison of the data
@@ -18,6 +17,6 @@ func (diff *DataDiff) Dump() {
 
 	log.Println("Added:")
 	for _, domain := range diff.added {
-		log.Println("\t+ " + domain)
+		log.Printf("\t+ %s, conf. %d", domain.Name, domain.Confidence)
 	}
 }

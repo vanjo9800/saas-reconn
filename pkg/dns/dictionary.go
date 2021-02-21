@@ -9,33 +9,32 @@ import (
 	"strings"
 )
 
-const amassWordlistName string = "resources/namelist.txt"
+const wordlistDirectory string = "resources/wordlists/"
 
-// BuildDictionary builds a dictionary channel for NSEC3 hash dictionary attack
-func BuildDictionary(dictionary chan<- string) {
-	addWordList(dictionary, amassWordlistName)
+// BuildLocalDictionary builds a dictionary channel for a local NSEC3 hash dictionary attack
+func BuildLocalDictionary(dictionary chan<- string) {
+	wordlists := wordlistBank()
+	for _, list := range wordlists {
+		addWordList(list, dictionary)
+	}
 	addProviderData(dictionary)
 	close(dictionary)
 }
 
-func addProviderData(dictionary chan<- string) {
-	var providers []string
+func cleanProviderName(name string, base string) string {
+	name = strings.TrimPrefix(name, "*.")
+	name = strings.TrimSuffix(name, ".")
+	name = strings.TrimSuffix(name, base)
+	name = strings.TrimSuffix(name, ".")
 
+	return name
+}
+
+func addProviderData(dictionary chan<- string) {
 	providerDatabase := db.NewDatabase()
 	providerDatabase.Initialise()
 
-	err := filepath.Walk(providerDatabase.Root, func(path string, info os.FileInfo, err error) error {
-		if strings.HasSuffix(path, ".json") {
-			path = strings.TrimPrefix(path, providerDatabase.Root)
-			path = strings.TrimSuffix(path, ".json")
-			providers = append(providers, path)
-		}
-		return nil
-	})
-	if err != nil || len(providers) == 0 {
-		log.Printf("Could not find any provider information")
-		return
-	}
+	providers := providerDatabase.GetAll()
 	for _, provider := range providers {
 		providerData, err := providerDatabase.ProviderQuery(provider, ".*")
 		if err != nil {
@@ -44,14 +43,63 @@ func addProviderData(dictionary chan<- string) {
 		}
 		for base, results := range providerData.Subdomains {
 			for _, subdomain := range results {
-				dictionary <- strings.TrimSuffix(subdomain, base)
+				dictionary <- cleanProviderName(subdomain.Name, base)
 			}
 		}
 	}
 }
 
-func addWordList(dictionary chan<- string, wordlistPath string) {
-	file, err := os.Open(wordlistPath)
+func exportProviderData(path string, filename string) {
+	err := os.MkdirAll(path, os.ModePerm)
+	if err != nil {
+		log.Printf("ExportProviderData: Could not create provider dictionary data directory %s: %s", filename, err)
+		return
+	}
+
+	providerDictionary, err := os.Create(path + filename)
+	if err != nil {
+		log.Printf("ExportProviderData: Could not create provider dictionary file %s: %s", filename, err)
+		return
+	}
+	defer providerDictionary.Close()
+
+	providerDatabase := db.NewDatabase()
+	providerDatabase.Initialise()
+
+	providers := providerDatabase.GetAll()
+	for _, provider := range providers {
+		providerData, err := providerDatabase.ProviderQuery(provider, ".*")
+		if err != nil {
+			log.Printf("[dictionary] Could not get data for provider %s", provider)
+			continue
+		}
+		for base, results := range providerData.Subdomains {
+			for _, subdomain := range results {
+				_, err := providerDictionary.WriteString(cleanProviderName(subdomain.Name, base) + "\n")
+				if err != nil {
+					log.Printf("ExportProviderData: Error writing to provider dictionary file %s: %s", filename, err)
+					return
+				}
+			}
+		}
+	}
+}
+
+func wordlistBank() (list []string) {
+	err := filepath.Walk(wordlistDirectory, func(path string, info os.FileInfo, err error) error {
+		if strings.HasSuffix(path, ".txt") {
+			list = append(list, path)
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("Could not read wordlists from directory %s", err)
+	}
+	return list
+}
+
+func addWordList(filepath string, dictionary chan<- string) {
+	file, err := os.Open(filepath)
 	if err != nil {
 		log.Printf("Error opening wordlist file %s", err)
 		return
