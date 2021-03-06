@@ -17,6 +17,11 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+func cleanBase(base string) string {
+	base = strings.ReplaceAll(base, "/", "_")
+	return base
+}
+
 func cleanResponse(responseBody string, hostname string, base string) string {
 	cleanBody := responseBody
 
@@ -170,7 +175,7 @@ func (checkRange SubdomainRange) Validate(noCache bool) (validRange SubdomainRan
 	cachedResults := cache.NewCache()
 	for _, prefix := range checkRange.Prefixes {
 
-		cachedDomain, err := cachedResults.FetchCachedDomainCheckResults(prefix, checkRange.Base.GetBase())
+		cachedDomain, err := cachedResults.FetchCachedDomainCheckResults(prefix, cleanBase(checkRange.Base.GetBase()))
 		if err == nil && !noCache && time.Since(cachedDomain.Updated).Hours() < 48 {
 			// log.Printf("Using cached data for %s", hostname)
 			if len(cachedDomain.Address) > 0 && cachedDomain.PageBody {
@@ -227,7 +232,7 @@ func (checkRange SubdomainRange) Validate(noCache bool) (validRange SubdomainRan
 				}
 			}
 		}
-		cachedResults.UpdateCachedDomainCheckData(prefix, checkRange.Base.GetBase(), *domainData)
+		cachedResults.UpdateCachedDomainCheckData(prefix, cleanBase(checkRange.Base.GetBase()), *domainData)
 	}
 
 	return validRange

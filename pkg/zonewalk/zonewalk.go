@@ -1,4 +1,4 @@
-package dns
+package zonewalk
 
 import (
 	"errors"
@@ -27,6 +27,18 @@ var dnsFailedRequests int
 
 const dnsFailedRequestsThreshold = 10
 const defaultPort = 53
+
+// Config is a class for configuration of the zone-walking module
+type Config struct {
+	Zone       string
+	Nameserver string
+	Threads    int
+	Timeout    int
+	Cache      bool
+	Mode       int
+	Hashcat    bool
+	Verbose    int
+}
 
 func randomStringWithCharset(length int, charset string) string {
 	var result strings.Builder
@@ -59,11 +71,16 @@ func cleanNameserver(nameserver string) (string, string) {
 	return parts[0], parts[1]
 }
 
-func detectDNSSECType(zone string, nameserver string) (recordType string, salt string, iterations int) {
+func cleanHash(hash string) string {
+	hash = strings.TrimSuffix(hash, ".")
+	return hash
+}
+
+func detectDNSSECType(zone string, nameserver string, verbosity int) (recordType string, salt string, iterations int) {
 
 	randomPrefix := "bzvdhelrad"
 
-	resp, err := dnssecQuery(nameserver, fmt.Sprintf("%s.%s", randomPrefix, zone), dns.TypeA)
+	resp, err := dnssecQuery(nameserver, fmt.Sprintf("%s.%s", randomPrefix, zone), dns.TypeA, verbosity)
 	if err != nil {
 		log.Printf("[%s] Error in DNS check for %s.%s", zone, randomPrefix, zone)
 		return "", "", 0
@@ -88,32 +105,28 @@ func detectDNSSECType(zone string, nameserver string) (recordType string, salt s
 	return "", "", 0
 }
 
-// ZoneWalkAttempt tests whether a particular zone supports DNSSEC and attempts zone-walking it
-func ZoneWalkAttempt(zone string, nameserver string, threads int, timeout int, noCache bool, zoneWalkMode int, hashcat bool) (names []string, isDNSSEC bool) {
+// AttemptWalk tests whether a particular zone supports DNSSEC and attempts zone-walking it
+func AttemptWalk(config Config) (names []string, isDNSSEC bool) {
 
 	// Default to system nameserver
-	if len(nameserver) == 0 {
+	if len(config.Nameserver) == 0 {
 		conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
 		if err != nil {
-			log.Printf("[%s] Error getting nameserver %s", zone, err)
+			log.Printf("[%s] Error getting nameserver %s", config.Zone, err)
 			return names, false
 		}
-		nameserver = conf.Servers[0]
+		config.Nameserver = conf.Servers[0]
 	}
 
-	nameserver, port := cleanNameserver(nameserver)
+	nameserver, port := cleanNameserver(config.Nameserver)
 	if i := net.ParseIP(nameserver); i != nil {
 		nameserver = net.JoinHostPort(nameserver, port)
 	} else {
 		nameserver = dns.Fqdn(nameserver) + ":" + port
 	}
 
-	// Remove trailing dots from zone
-	// TODO:: check
-	reg, _ := regexp.Compile(`\.*$`)
-	zone = reg.ReplaceAllString(zone, ".")
-
-	dnssecType, salt, iterations := detectDNSSECType(zone, nameserver)
+	zone := config.Zone
+	dnssecType, salt, iterations := detectDNSSECType(zone, nameserver, config.Verbose)
 
 	// Does not support DNSSEC
 	if len(dnssecType) == 0 {
@@ -124,51 +137,55 @@ func ZoneWalkAttempt(zone string, nameserver string, threads int, timeout int, n
 	dnsFailedRequests = 0
 	if dnssecType == "nsec" {
 		log.Printf("[%s:%s] Starting NSEC zone-walking...", nameserver, zone)
-		if zoneWalkMode != 0 {
-			names = nsecZoneWalking(zone, nameserver)
+		if config.Mode != 0 {
+			names = nsecZoneWalking(zone, nameserver, config.Verbose)
 		}
 	} else if dnssecType == "nsec3" {
 		log.Printf("[%s:%s] Starting NSEC3 zone-walking...", nameserver, zone)
 
-		cachedResults := cache.NewCache()
-		cachedZoneWalk, err := cachedResults.FetchCachedZoneWalk(zone, salt, iterations)
-		if err != nil || noCache {
-			cachedZoneWalk = cache.CachedZoneWalk{
-				Salt:       salt,
-				Iterations: iterations,
-				Hashes:     []string{},
-				Guessed:    map[string]string{},
-				Updated:    time.Time{},
-				List: cache.CachedZoneList{
-					Names:        names,
-					Prev:         []string{},
-					Next:         []string{},
-					ExpectedSize: "",
-				},
+		var cachedZoneWalk cache.CachedZoneWalk
+		if config.Cache {
+			cachedResults := cache.NewCache()
+			var err error
+			cachedZoneWalk, err = cachedResults.FetchCachedZoneWalk(zone, salt, iterations)
+			if err != nil {
+				cachedZoneWalk = cache.CachedZoneWalk{
+					Salt:       salt,
+					Iterations: iterations,
+					Hashes:     []string{},
+					Guessed:    map[string]string{},
+					Updated:    time.Time{},
+					List: cache.CachedZoneList{
+						Names:        names,
+						Prev:         []string{},
+						Next:         []string{},
+						ExpectedSize: "",
+					},
+				}
 			}
 		}
 
-		if zoneWalkMode != 2 {
+		if config.Mode != 2 {
 			fmt.Printf("Starting zone-scan...\n")
 			start := time.Now()
 
-			hashes, exportedList := nsec3ZoneScan(zone, nameserver, salt, iterations, threads, timeout, &cachedZoneWalk.List)
+			hashes, exportedList := nsec3ZoneScan(zone, nameserver, salt, iterations, config.Threads, config.Timeout, &cachedZoneWalk.List, config.Verbose)
 			cachedZoneWalk.Hashes = append(cachedZoneWalk.Hashes, hashes...)
 			cachedZoneWalk.List = exportedList
 			sort.Strings(cachedZoneWalk.Hashes)
 
 			elapsed := time.Since(start)
-			fmt.Printf("Finished zone-scan...\n")
-			fmt.Printf("[%s] Found %d hashes in %s", zone, len(hashes), elapsed)
+			fmt.Printf("\nFinished zone-scan...\n")
+			fmt.Printf("[%s] Found %d hashes in %s\n", zone, len(hashes), elapsed)
 		}
 
-		if zoneWalkMode != 1 {
+		if config.Mode != 1 {
 			fmt.Printf("Starting hash reversing...\n")
 			var mapping map[string]string
-			if hashcat {
+			if config.Hashcat {
 				exportLocation := ExportToHashcat(cachedZoneWalk.Hashes, zone, salt, iterations)
 				mapping = RunHashcat(exportLocation)
-				// CleanHashcatDir()
+				CleanHashcatDir()
 			} else {
 				mapping = reverseNSEC3Hashes(cachedZoneWalk.Hashes, zone, salt, iterations)
 			}
@@ -183,7 +200,10 @@ func ZoneWalkAttempt(zone string, nameserver string, threads int, timeout int, n
 		}
 
 		cachedZoneWalk.Updated = time.Now()
-		cachedResults.UpdateCachedZoneWalkData(zone, cachedZoneWalk)
+		if config.Cache {
+			cachedResults := cache.NewCache()
+			cachedResults.UpdateCachedZoneWalkData(zone, cachedZoneWalk)
+		}
 	} else {
 		log.Printf("[%s] Unexpected DNSSEC record %s", zone, dnssecType)
 	}
@@ -191,7 +211,7 @@ func ZoneWalkAttempt(zone string, nameserver string, threads int, timeout int, n
 	return names, true
 }
 
-func nsecZoneWalking(zone string, nameserver string) (names []string) {
+func nsecZoneWalking(zone string, nameserver string, verbosity int) (names []string) {
 
 	queried := make(map[string]bool)
 	added := make(map[string]bool)
@@ -202,7 +222,7 @@ func nsecZoneWalking(zone string, nameserver string) (names []string) {
 		if _, exists := queried[queryName]; exists {
 			break
 		}
-		resp, err := dnssecQuery(nameserver, queryName, dns.TypeNSEC)
+		resp, err := dnssecQuery(nameserver, queryName, dns.TypeNSEC, verbosity)
 		queried[queryName] = true
 
 		if err != nil {
@@ -232,7 +252,7 @@ func nsecZoneWalking(zone string, nameserver string) (names []string) {
 	return names
 }
 
-func nsec3ZoneScan(zone string, nameserver string, salt string, iterations int, threads int, scanTimeout int, cachedZoneList *cache.CachedZoneList) (hashes []string, treeJSON cache.CachedZoneList) {
+func nsec3ZoneScan(zone string, nameserver string, salt string, iterations int, threads int, scanTimeout int, cachedZoneList *cache.CachedZoneList, verbosity int) (hashes []string, treeJSON cache.CachedZoneList) {
 	batchSize := 100
 	bufferSize := 10
 
@@ -253,7 +273,7 @@ func nsec3ZoneScan(zone string, nameserver string, salt string, iterations int, 
 	}
 
 	timeout := time.After(time.Duration(scanTimeout) * time.Second)
-	tick := time.Tick(500 * time.Millisecond)
+	tick := time.Tick(time.Second)
 	lastCount := zoneList.records()
 	for {
 		go func() {
@@ -286,7 +306,7 @@ func nsec3ZoneScan(zone string, nameserver string, salt string, iterations int, 
 					defer func() {
 						concurrencyLookups <- true
 					}()
-					resp, err := dnssecQuery(nameserver, domainLookup, dns.TypeA)
+					resp, err := dnssecQuery(nameserver, domainLookup, dns.TypeA, verbosity)
 					if err != nil {
 						log.Printf("Failed DNS lookup for %s: %s", domainLookup, err)
 						return
@@ -344,12 +364,12 @@ func nsec3ZoneScan(zone string, nameserver string, salt string, iterations int, 
 		case <-timeout:
 			return zoneList.HashedNames(), zoneList.ExportList()
 		case <-tick:
-			fmt.Printf("[%s] Found %d hashes with coverage %s, speed %d/second\n", zone, zoneList.records(), zoneList.Coverage(), 2*(zoneList.records()-lastCount))
+			fmt.Printf("[%s] Found %d hashes with coverage %s, speed %d/second\r", zone, zoneList.records(), zoneList.Coverage(), 2*(zoneList.records()-lastCount))
 			lastCount = zoneList.records()
 		default:
 			batchRecords := <-accumulatedHashes
 			for _, record := range batchRecords {
-				zoneList.AddRecord(record.Prev, record.Next)
+				zoneList.AddRecord(cleanHash(record.Prev), cleanHash(record.Next))
 			}
 		}
 	}
@@ -384,7 +404,7 @@ func reverseNSEC3Hashes(hashes []string, zone string, salt string, iterations in
 	return mapping
 }
 
-func dnssecQuery(nameserver string, queryName string, queryType uint16) (response *dns.Msg, err error) {
+func dnssecQuery(nameserver string, queryName string, queryType uint16, verbosity int) (response *dns.Msg, err error) {
 
 	message := &dns.Msg{
 		MsgHdr: dns.MsgHdr{
@@ -422,7 +442,6 @@ func dnssecQuery(nameserver string, queryName string, queryType uint16) (respons
 		response, rtt, err = client.Exchange(message, nameserver)
 
 		if err != nil {
-			log.Printf("[%s] Error occurred: %s", queryName, err)
 			ioTimeoutMatch, err := regexp.MatchString(`i/o timeout`, err.Error())
 			if err == nil && ioTimeoutMatch {
 				dnsFailedRequests++
@@ -430,7 +449,9 @@ func dnssecQuery(nameserver string, queryName string, queryType uint16) (respons
 					log.Printf("[%s] Too many timeouts, aborting request", queryName)
 					return nil, err
 				}
-				log.Printf("[%s] DNS request timeout, backing off after %d retries", queryName, dnsFailedRequests)
+				if verbosity >= 5 {
+					log.Printf("[%s] DNS request timeout, backing off after %d retries", queryName, dnsFailedRequests)
+				}
 				time.Sleep(rtt * time.Duration(math.Exp2(float64(dnsFailedRequests-1))))
 				continue
 			} else {

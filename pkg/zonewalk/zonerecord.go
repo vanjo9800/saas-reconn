@@ -1,4 +1,4 @@
-package dns
+package zonewalk
 
 import (
 	"encoding/base32"

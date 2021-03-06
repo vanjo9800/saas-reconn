@@ -8,20 +8,21 @@ import (
 	"runtime"
 
 	"saasreconn/pkg/db"
-	"saasreconn/pkg/dns"
 	"saasreconn/pkg/provider"
+	"saasreconn/pkg/zonewalk"
 )
 
 const zoneWalkConfidence = 70
 
 var defaultNameservers = []string{"208.67.222.222:53", "1.1.1.1:53", "8.8.8.8:53", "8.8.4.4:%3"}
 
-func runZoneWalking(resultsDatabase *db.Database, name string, domain string, nameservers []string, threads int, timeout int, noCache bool, walkmode int, hashcat bool) {
+func runZoneWalking(resultsDatabase *db.Database, name string, config zonewalk.Config, nameservers []string) {
 	for _, nameserver := range nameservers {
-		found, isDNSSEC := dns.ZoneWalkAttempt(domain, nameserver, threads, timeout, noCache, walkmode, hashcat)
+		config.Nameserver = nameserver
+		found, isDNSSEC := zonewalk.AttemptWalk(config)
 		if isDNSSEC {
-			log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", name, domain, len(found))
-			diff, _ := resultsDatabase.UpdateProvider(name, domain, db.MapStringNamesToSubdomain(found, zoneWalkConfidence))
+			log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", name, config.Zone, len(found))
+			diff, _ := resultsDatabase.UpdateProvider(name, config.Zone, db.MapStringNamesToSubdomain(found, zoneWalkConfidence))
 			diff.Dump()
 		}
 	}
@@ -41,6 +42,7 @@ func main() {
 	walkmode := flag.Int("walkmode", 0, " what mode to use for zone-walking (0 for both mapping and reversing, 1 for just mapping and storing cache, and 2 for just reversing based on cache")
 	noCache := flag.Bool("no-cache", false, "a bool whether to use pre-existing")
 	hashcat := flag.Bool("hashcat", false, "use hashcat for reversing NSEC3 hashes")
+	verbose := flag.Int("verbose", 3, "verbosity factor (default 3)")
 	flag.Parse()
 
 	// Database setup
@@ -51,13 +53,25 @@ func main() {
 	}
 	log.Println("Performing zone-walking")
 
+	config := zonewalk.Config{
+		Zone:       "",
+		Nameserver: "",
+		Threads:    *threads,
+		Timeout:    *timeout,
+		Cache:      !*noCache,
+		Mode:       *walkmode,
+		Hashcat:    *hashcat,
+		Verbose:    *verbose,
+	}
+
 	nameservers := defaultNameservers
 	if *nameserver != "" {
 		nameservers = []string{*nameserver}
 	}
 
 	if *domain != "" {
-		runZoneWalking(resultsDatabase, *domain, *domain, nameservers, *threads, *timeout, *noCache, *walkmode, *hashcat)
+		config.Zone = *domain
+		runZoneWalking(resultsDatabase, *domain, config, nameservers)
 		os.Exit(0)
 	}
 
@@ -70,7 +84,8 @@ func main() {
 			continue
 		}
 		for _, domain := range data.Subdomain {
-			runZoneWalking(resultsDatabase, name, domain, nameservers, *threads, *timeout, *noCache, *walkmode, *hashcat)
+			config.Zone = domain
+			runZoneWalking(resultsDatabase, name, config, nameservers)
 		}
 	}
 }
