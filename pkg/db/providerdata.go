@@ -18,8 +18,9 @@ type ProviderData struct {
 
 // Subdomain is a class of stored subdomain entry with a name and a confidence score
 type Subdomain struct {
-	Name       string
-	Confidence int
+	Name         string
+	Confidence   int
+	DiscoveredBy []string
 }
 
 // SubdomainList is an instance of list of Subdomains with defined comparison functions
@@ -34,12 +35,27 @@ func (l SubdomainList) Less(i, j int) bool {
 }
 func (l SubdomainList) Swap(i, j int) { l[i], l[j] = l[j], l[i] }
 
-// MapStringNamestoSubdomain applies a certain confidence score to a string array of subdomains
-func MapStringNamesToSubdomain(domainNames []string, confidenceScore int) (domains []Subdomain) {
+func uniqueStrings(arr []string) []string {
+	flags := make(map[string]bool)
+	for _, element := range arr {
+		flags[element] = true
+	}
+
+	var uniqueElements []string
+	for element, _ := range flags {
+		uniqueElements = append(uniqueElements, element)
+	}
+
+	return uniqueElements
+}
+
+// MapStringNamesToSubdomain applies a certain confidence score to a string array of subdomains
+func MapStringNamesToSubdomain(domainNames []string, confidenceScore int, source string) (domains []Subdomain) {
 	for _, domainName := range domainNames {
 		domains = append(domains, Subdomain{
-			Name:       domainName,
-			Confidence: confidenceScore,
+			Name:         domainName,
+			Confidence:   confidenceScore,
+			DiscoveredBy: []string{source},
 		})
 	}
 
@@ -103,22 +119,26 @@ func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains [
 
 	var addedDomains []Subdomain
 	uniqueDomains := make(map[string]int)
+	sourcesDomains := make(map[string][]string)
 
 	for _, domain := range data.Subdomains[rootDomain] {
 		uniqueDomains[domain.Name] = domain.Confidence
+		sourcesDomains[domain.Name] = domain.DiscoveredBy
 	}
 	for _, domain := range newSubdomains {
 		if _, ok := uniqueDomains[domain.Name]; !ok {
 			addedDomains = append(addedDomains, domain)
 		}
 		uniqueDomains[domain.Name] = domain.Confidence
+		sourcesDomains[domain.Name] = uniqueStrings(append(sourcesDomains[domain.Name], domain.DiscoveredBy...))
 	}
 
 	data.Subdomains[rootDomain] = []Subdomain{}
 	for name, confidence := range uniqueDomains {
 		data.Subdomains[rootDomain] = append(data.Subdomains[rootDomain], Subdomain{
-			Name:       name,
-			Confidence: confidence,
+			Name:         name,
+			Confidence:   confidence,
+			DiscoveredBy: sourcesDomains[name],
 		})
 	}
 
@@ -153,13 +173,13 @@ func (data *ProviderData) Dump() {
 			continue
 		}
 		if printedIntro == 0 {
-			log.Println("ProviderName: " + data.ProviderName)
-			log.Println("Collected: " + data.Collected.String())
+			log.Printf("ProviderName: %s\n", data.ProviderName)
+			log.Printf("Collected: %s\n", data.Collected.String())
 			printedIntro = 1
 		}
 		log.Println("  - " + subdomain)
 		for _, domain := range domainsArray {
-			log.Printf("    - %s, conf. %d", domain.Name, domain.Confidence)
+			log.Printf("    - %s, conf. %d, sources %v", domain.Name, domain.Confidence, domain.DiscoveredBy)
 		}
 	}
 }

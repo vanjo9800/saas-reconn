@@ -12,8 +12,13 @@ import (
 const wordlistDirectory string = "resources/wordlists/"
 
 // BuildLocalDictionary builds a dictionary channel for a local NSEC3 hash dictionary attack
-func BuildLocalDictionary(dictionary chan<- string) {
-	wordlists := wordlistBank()
+func BuildLocalDictionary(wordlist string, dictionary chan<- string) {
+	var wordlists []string
+	if wordlist == "" {
+		wordlists = WordlistBank()
+	} else {
+		wordlists = append(wordlists, wordlist)
+	}
 	for _, list := range wordlists {
 		addWordList(list, dictionary)
 	}
@@ -85,7 +90,7 @@ func exportProviderData(path string, filename string) {
 	}
 }
 
-func wordlistBank() (list []string) {
+func WordlistBank() (list []string) {
 	err := filepath.Walk(wordlistDirectory, func(path string, info os.FileInfo, err error) error {
 		if strings.HasSuffix(path, ".txt") {
 			list = append(list, path)

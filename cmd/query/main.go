@@ -79,7 +79,7 @@ func main() {
 					for _, prefix := range validNames[subdomain].Prefixes {
 						updateDatabase = append(updateDatabase, fmt.Sprintf("%s.%s", prefix, validNames[subdomain].Base.GetBase()))
 					}
-					diff, _ := resultsDatabase.UpdateProvider(name, subdomain, db.MapStringNamesToSubdomain(updateDatabase, activePageConfidence))
+					diff, _ := resultsDatabase.UpdateProvider(name, subdomain, db.MapStringNamesToSubdomain(updateDatabase, activePageConfidence, "Active validation"))
 					diff.Dump()
 				}
 				for _, url := range provider.Urls {

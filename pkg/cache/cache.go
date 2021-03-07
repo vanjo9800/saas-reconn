@@ -111,7 +111,7 @@ func (cache *Cache) fetchCacheForDomainBase(domainBase string) (data map[string]
 
 // FetchCachedZoneWalk fetches a zonewalk specified by zone, salt and iterations, or returns an empty object
 func (cache *Cache) FetchCachedZoneWalk(zone string, salt string, iterations int) (data CachedZoneWalk, err error) {
-	zoneWalksForZone, err := cache.fetchZoneWalkForZone(zone)
+	zoneWalksForZone, err := cache.FetchZoneWalkForZone(zone)
 	if err == nil {
 		if cachedValue, ok := zoneWalksForZone[fmt.Sprintf("%s:%d", salt, iterations)]; ok {
 			return cachedValue, nil
@@ -126,7 +126,7 @@ func (cache *Cache) FetchCachedZoneWalk(zone string, salt string, iterations int
 	return CachedZoneWalk{}, errors.New("No previous cache")
 }
 
-func (cache *Cache) fetchZoneWalkForZone(zone string) (data map[string]CachedZoneWalk, err error) {
+func (cache *Cache) FetchZoneWalkForZone(zone string) (data map[string]CachedZoneWalk, err error) {
 	byteData, err := cache.fetchFromCache("zonewalk", zone)
 	if err != nil {
 		log.Printf("[%s] Could not find existing cache data", zone)
@@ -183,7 +183,7 @@ func (cache *Cache) UpdateCachedDomainCheckData(domainName string, domainBase st
 }
 
 func (cache *Cache) UpdateCachedZoneWalkData(zone string, zoneWalkData CachedZoneWalk) {
-	zoneWalksForZone, err := cache.fetchZoneWalkForZone(zone)
+	zoneWalksForZone, err := cache.FetchZoneWalkForZone(zone)
 	if err != nil {
 		log.Printf("[%s] There was an error fetching cached data", zone)
 		return

@@ -87,7 +87,7 @@ func RunHashcat(inputFile string) map[string]string {
 	}
 
 	// Build dictionary lists
-	wordlists := wordlistBank()
+	wordlists := WordlistBank()
 	providersWordlist := "provider_dictionary.txt"
 	wordlists = append(wordlists, hashcatLocation+providersWordlist)
 	exportProviderData(hashcatLocation, providersWordlist)
