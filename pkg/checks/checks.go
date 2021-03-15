@@ -10,12 +10,15 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"saasreconn/pkg/cache"
 
 	"github.com/chromedp/chromedp"
 )
+
+const requestTimeout = 10 * time.Second
 
 func cleanBase(base string) string {
 	base = strings.ReplaceAll(base, "/", "_")
@@ -117,34 +120,63 @@ func isInvalidTextResponse(responseBody string, hostname string, base string) bo
 	return false
 }
 
-func randomPageBody(addressBase AddressBase) (cleanBody string) {
+func httpSyncRequest(url string, verbosity int) (cleanBody string) {
+	responseBody := make(chan string, 1)
+	httpAsyncRequest(url, verbosity, responseBody)
+	select {
+	case val := <-responseBody:
+		return val
+	case <-time.After(requestTimeout):
+		if verbosity >= 3 {
+			log.Printf("Request for %s has timed out", url)
+		}
+		return ""
+	}
+}
+
+func httpAsyncRequest(url string, verbosity int, cleanBody chan<- string) {
+	go func() {
+		resp, err := http.Get(url)
+		if err != nil {
+			if verbosity >= 4 {
+				log.Printf("Could not access page %s: %s", url, err)
+			}
+			return
+		}
+		defer resp.Body.Close()
+		pageBody, _ := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			if verbosity >= 4 {
+				log.Printf("Could not extract page body %s: %s", url, err)
+			}
+			return
+		}
+		if resp.StatusCode >= 400 {
+			if verbosity >= 4 {
+				log.Printf("Response for %s has an error code %d, invalidating", url, resp.StatusCode)
+			}
+			return
+		}
+		cleanBody <- string(pageBody)
+	}()
+}
+
+func randomPageBody(addressBase AddressBase, verbosity int) (cleanBody string) {
 
 	randomClient1 := "hdmmndjzsj"
 	randomClient2 := "wbuiiionia"
 
-	errorPageClean := ""
-	resp, err := http.Get(addressBase.GetUrl(randomClient1))
-	if err != nil {
-		log.Printf("[%s] Could not access random subdomain page, domain must be existing", addressBase.GetBase())
-		return ""
+	errorPageClean1 := cleanResponse(httpSyncRequest(addressBase.GetUrl(randomClient1), verbosity), randomClient1, addressBase.GetBase())
+	errorPageClean2 := cleanResponse(httpSyncRequest(addressBase.GetUrl(randomClient2), verbosity), randomClient2, addressBase.GetBase())
+
+	if errorPageClean1 != errorPageClean2 && verbosity >= 2 {
+		log.Printf("[%s] HINT: Non-existing pages have different responses!", addressBase.GetBase())
 	}
 
-	defer resp.Body.Close()
-	errorPage, _ := ioutil.ReadAll(resp.Body)
-	errorPageClean = cleanResponse(string(errorPage), randomClient1, addressBase.GetBase())
-
-	resp, _ = http.Get(addressBase.GetUrl(randomClient2))
-	defer resp.Body.Close()
-	errorPage, _ = ioutil.ReadAll(resp.Body)
-	errorPageClean2 := cleanResponse(string(errorPage), randomClient2, addressBase.GetBase())
-	if errorPageClean != errorPageClean2 {
-		log.Printf("[%s] Non-existing pages have different responses!", addressBase.GetBase())
-	}
-
-	return errorPageClean
+	return errorPageClean1
 }
 
-func headlessChromeReq(url string, keyElement string) bool {
+func headlessChromeReq(url string, keyElement string, verbosity int) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	ctx, cancel = chromedp.NewContext(ctx)
 	defer cancel()
@@ -155,14 +187,16 @@ func headlessChromeReq(url string, keyElement string) bool {
 		chromedp.Text(keyElement, &data, chromedp.NodeVisible, chromedp.ByQuery),
 	)
 	if err != nil {
-		log.Printf("[%s] %s", url, err)
+		if verbosity >= 2 {
+			log.Printf("[%s] Headless Chrome request error %s", url, err)
+		}
 		return false
 	}
 
 	return true
 }
 
-func (checkRange SubdomainRange) Validate(noCache bool) (validRange SubdomainRange) {
+func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRange SubdomainRange) {
 	validRange.Base = checkRange.Base
 
 	headlessFlag := ""
@@ -170,69 +204,84 @@ func (checkRange SubdomainRange) Validate(noCache bool) (validRange SubdomainRan
 		headlessFlag = ".banner-logo"
 	}
 
-	errorPageClean := randomPageBody(checkRange.Base)
+	errorPageClean := randomPageBody(checkRange.Base, verbosity)
 
+	validPrefixes := make(chan string, 5)
 	cachedResults := cache.NewCache()
+	var prefixWorkgroup sync.WaitGroup
 	for _, prefix := range checkRange.Prefixes {
-
-		cachedDomain, err := cachedResults.FetchCachedDomainCheckResults(prefix, cleanBase(checkRange.Base.GetBase()))
-		if err == nil && !noCache && time.Since(cachedDomain.Updated).Hours() < 48 {
-			// log.Printf("Using cached data for %s", hostname)
-			if len(cachedDomain.Address) > 0 && cachedDomain.PageBody {
-				validRange.Prefixes = append(validRange.Prefixes, prefix)
+		prefixWorkgroup.Add(1)
+		go func(prefix string, prefixWorkgroup *sync.WaitGroup) {
+			defer prefixWorkgroup.Done()
+			cachedDomain, err := cachedResults.FetchCachedDomainCheckResults(prefix, cleanBase(checkRange.Base.GetBase()))
+			if err == nil && !noCache && time.Since(cachedDomain.Updated).Hours() < 48 {
+				if len(cachedDomain.Address) > 0 && cachedDomain.PageBody {
+					validPrefixes <- prefix
+				}
+				return
 			}
-			continue
-		}
 
-		domainData := &cache.CachedDomainCheck{
-			Updated:  time.Now(),
-			PageBody: false,
-			Address:  []string{},
-		}
-
-		lookupFlag := true
-		if reflect.TypeOf(checkRange.Base).Name() == "SubdomainBase" {
-			url, err := url.Parse(checkRange.Base.GetUrl(prefix))
-			address, err := net.LookupHost(url.Hostname())
-			if err != nil || len(address) == 0 {
-				lookupFlag = false
+			domainData := &cache.CachedDomainCheck{
+				Updated:  time.Now(),
+				PageBody: false,
+				Address:  []string{},
 			}
-			domainData.Address = address
-		}
 
-		if lookupFlag {
+			defer cachedResults.UpdateCachedDomainCheckData(prefix, cleanBase(checkRange.Base.GetBase()), *domainData)
+
+			if reflect.TypeOf(checkRange.Base).Name() == "SubdomainBase" {
+				url, err := url.Parse(checkRange.Base.GetUrl(prefix))
+				address, err := net.LookupHost(url.Hostname())
+				if err != nil || len(address) == 0 {
+					return
+				}
+				domainData.Address = address
+			}
+
 			if len(domainData.Address) == 0 {
 				domainData.Address = []string{"1"}
 			}
 			if len(headlessFlag) > 0 {
-				isValid := headlessChromeReq(checkRange.Base.GetUrl(prefix), headlessFlag)
+				isValid := headlessChromeReq(checkRange.Base.GetUrl(prefix), headlessFlag, verbosity)
 				if isValid {
 					domainData.PageBody = true
-					validRange.Prefixes = append(validRange.Prefixes, prefix)
+					validPrefixes <- prefix
 				}
-			} else {
-				resp, err := http.Get(checkRange.Base.GetUrl(prefix))
-				if err == nil {
-					defer resp.Body.Close()
-					testPage, _ := ioutil.ReadAll(resp.Body)
-					cleanBody := cleanResponse(string(testPage), prefix, checkRange.Base.GetBase())
-					if resp.StatusCode < 400 && cleanBody != errorPageClean {
-						url, _ := url.Parse(checkRange.Base.GetUrl(prefix))
-						if !isInvalidTextResponse(cleanBody, prefix, checkRange.Base.GetBase()) {
-							if strings.HasPrefix(url.Hostname(), "outlook") {
-								err = ioutil.WriteFile("temp/"+prefix+"."+url.Hostname()+".json", []byte(cleanBody), 0755)
-								err = ioutil.WriteFile("temp/"+url.Hostname()+".json", []byte(errorPageClean), 0755)
-							}
-							domainData.PageBody = true
-							validRange.Prefixes = append(validRange.Prefixes, prefix)
-						}
-					}
-				} else {
-					log.Printf("[%s] Could not access example subdomain page", checkRange.Base.GetUrl(prefix))
+				return
+			}
+			cleanBody := cleanResponse(httpSyncRequest(checkRange.Base.GetUrl(prefix), verbosity), prefix, checkRange.Base.GetBase())
+			if cleanBody == "" {
+				if verbosity >= 3 {
+					log.Printf("[%s] Could not access subdomain page", checkRange.Base.GetUrl(prefix))
+				}
+				return
+			}
+			if cleanBody != errorPageClean {
+				// url, _ := url.Parse(checkRange.Base.GetUrl(prefix))
+				if !isInvalidTextResponse(cleanBody, prefix, checkRange.Base.GetBase()) {
+					// if strings.HasPrefix(url.Hostname(), "outlook") {
+					// 	err = ioutil.WriteFile("temp/"+prefix+"."+url.Hostname()+".json", []byte(cleanBody), 0755)
+					// 	err = ioutil.WriteFile("temp/"+url.Hostname()+".json", []byte(errorPageClean), 0755)
+					// }
+					domainData.PageBody = true
+					validPrefixes <- prefix
 				}
 			}
+		}(prefix, &prefixWorkgroup)
+	}
+
+	go func(prefixWorkgroup *sync.WaitGroup) {
+		prefixWorkgroup.Wait()
+		close(validPrefixes)
+	}(&prefixWorkgroup)
+
+	for {
+		prefix, more := <-validPrefixes
+		if more {
+			validRange.Prefixes = append(validRange.Prefixes, prefix)
+		} else {
+			break
 		}
-		cachedResults.UpdateCachedDomainCheckData(prefix, cleanBase(checkRange.Base.GetBase()), *domainData)
 	}
 
 	return validRange

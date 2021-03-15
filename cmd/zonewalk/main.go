@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	"saasreconn/pkg/db"
 	dnsTools "saasreconn/pkg/dns"
@@ -21,16 +22,33 @@ func runZoneWalking(resultsDatabase *db.Database, name string, config zonewalk.C
 	} else {
 		nameservers = dnsTools.GetNameservers(config.Zone)
 	}
+	var zoneWalkers sync.WaitGroup
+	foundNames := make(chan []string)
 	for _, nameserver := range nameservers {
-		config.Nameserver = nameserver
-		found, isDNSSEC := zonewalk.AttemptWalk(config)
-		if isDNSSEC {
-			log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", name, config.Zone, len(found))
+		zoneWalkers.Add(1)
+		log.Printf("Starting a new enumeration %s", nameserver)
+		go func(nameserver string, zoneWalkers *sync.WaitGroup) {
+			config.Nameserver = nameserver
+			found, isDNSSEC := zonewalk.AttemptWalk(config)
+			if isDNSSEC {
+				log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", nameserver, config.Zone, len(found))
+				foundNames <- found
+			}
+			zoneWalkers.Done()
+		}(nameserver, &zoneWalkers)
+	}
+
+	go func() {
+		for {
+			found, more := <-foundNames
+			if !more {
+				break
+			}
 			diff, _ := resultsDatabase.UpdateProvider(name, config.Zone, db.MapStringNamesToSubdomain(found, zoneWalkConfidence, "Zonewalking"))
 			diff.Dump()
 		}
-	}
-
+	}()
+	zoneWalkers.Wait()
 }
 
 func main() {
@@ -58,9 +76,6 @@ func main() {
 	log.Println("Performing zone-walking")
 
 	config := zonewalk.Config{
-		// Zone:       "",
-		// Nameserver: "",
-		// Threads:    *threads,
 		Timeout: *timeout,
 		Cache:   !*noCache,
 		Mode:    *walkmode,

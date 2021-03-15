@@ -10,12 +10,12 @@ import (
 	"github.com/miekg/dns"
 )
 
-var timeoutGroup sync.WaitGroup
-
-var failedRequests int
+var timeoutLogLock sync.Mutex
+var timeoutLog map[string]bool = make(map[string]bool)
 
 const failedRequestsThreshold = 10
 const requestTimeout = 4 * time.Second
+const timeoutWaitTime = 200 * time.Millisecond
 
 func buildMessage() (message *dns.Msg) {
 
@@ -92,22 +92,34 @@ func AsyncQuery(nameserver string, queryName string, queryType uint16, verbosity
 	client.UDPSize = 12320
 
 	go func() {
-		timeoutGroup.Wait()
-		hadTimeout := false
-		for {
-			response, rtt, err := client.Exchange(message, nameserver)
+		// Send request
+		response, rtt, err := client.Exchange(message, nameserver)
 
-			if err != nil {
-				if !hadTimeout {
-					timeoutGroup.Wait()
-				}
-				ioTimeoutMatch, err := regexp.MatchString(`i/o timeout`, err.Error())
-				if err == nil && ioTimeoutMatch {
-					if !hadTimeout {
-						hadTimeout = true
-						timeoutGroup.Add(1)
+		// Handle any errors
+		if err != nil {
+			// Check if it is a timeout
+			ioTimeoutMatch, err := regexp.MatchString(`i/o timeout`, err.Error())
+			if err == nil && ioTimeoutMatch {
+				// Loop if another dns request is handling the back-off, or announce this thread is handling it
+				for {
+					timeoutLogLock.Lock()
+					if val, ok := timeoutLog[nameserver]; val == false || !ok {
+						timeoutLog[nameserver] = true
+						timeoutLogLock.Unlock()
+						defer func() {
+							timeoutLogLock.Lock()
+							timeoutLog[nameserver] = false
+							timeoutLogLock.Unlock()
+						}()
+						break
 					}
-					defer timeoutGroup.Done()
+					timeoutLogLock.Unlock()
+					time.Sleep(timeoutWaitTime)
+				}
+
+				// Exponential back-off
+				failedRequests := 0
+				for err == nil && ioTimeoutMatch {
 					failedRequests++
 					if failedRequests > failedRequestsThreshold {
 						log.Printf("[%s] Too many timeouts, aborting request", queryName)
@@ -117,26 +129,28 @@ func AsyncQuery(nameserver string, queryName string, queryType uint16, verbosity
 						log.Printf("[%s] DNS request timeout, backing off after %d retries", queryName, failedRequests)
 					}
 					time.Sleep(rtt * time.Duration(math.Exp2(float64(failedRequests-1))))
-					continue
-				} else {
-					log.Printf("[%s] Unknown error type %s", queryName, err)
-					return
+					response, rtt, err = client.Exchange(message, nameserver)
+					if err == nil {
+						break
+					}
+					ioTimeoutMatch, err = regexp.MatchString(`i/o timeout`, err.Error())
 				}
-			}
-			failedRequests = 0
-
-			if response.Truncated {
-				log.Printf("[%s] Truncated response, parsing not supported yet", queryName)
+			} else {
+				log.Printf("[%s] Unknown error type %s", queryName, err)
 				return
 			}
+		}
 
-			if response.Id != message.Id {
-				log.Printf("[%s] ID mismatch", queryName)
-				return
-			}
-
-			responseChannel <- response
+		if response.Truncated {
+			log.Printf("[%s] Truncated response, parsing not supported yet", queryName)
 			return
 		}
+
+		if response.Id != message.Id {
+			log.Printf("[%s] ID mismatch", queryName)
+			return
+		}
+
+		responseChannel <- response
 	}()
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -10,25 +11,38 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-func browserFetch(domain string, position string, last string, from int) (count string, domains string) {
+const fetchTimeout = 10.0 * time.Second
+const fetchRate = 4.0 * time.Second
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	ctx, cancel = chromedp.NewContext(ctx)
-	defer cancel()
+var failedQueries = 0
+
+func browserFetch(ctx context.Context, domain string, position string, last string, from int) (count string, domains string) {
 
 	url := "https://searchdns.netcraft.com/?restriction=site+" + position + "+with&"
 	if from != 0 {
 		url += "from=" + strconv.Itoa(from) + "&last=" + last + "&"
 	}
 	url += "host=" + domain + "&position=limited"
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(url),
-		chromedp.Text(".results-table", &domains, chromedp.NodeVisible, chromedp.ByQuery),
-		chromedp.Text(".banner__container--text > h2", &count, chromedp.NodeVisible, chromedp.ByQuery),
-	)
-	if err != nil {
-		log.Println(err)
-		return count, domains
+	for {
+		log.Printf("[%s] Querying url %s", domain, url)
+
+		// Add fetchTimeout to context
+		ctx, _ = context.WithTimeout(ctx, fetchTimeout)
+		ctx, _ = chromedp.NewContext(ctx)
+
+		err := chromedp.Run(ctx,
+			chromedp.Navigate(url),
+			chromedp.Text(".results-table", &domains, chromedp.NodeVisible, chromedp.ByQuery),
+			chromedp.Text(".banner__container--text > h2", &count, chromedp.NodeVisible, chromedp.ByQuery),
+		)
+		if err == nil {
+			failedQueries = 0
+			break
+		}
+		log.Printf("[%s] Gave error %s\n failed attempts so far %d", domain, err, failedQueries)
+		failedQueries = int(math.Min(10, float64(failedQueries)+1))
+		log.Printf("Sleeping for %s", time.Duration(math.Exp2(float64(failedQueries-1)))*time.Second)
+		time.Sleep(time.Duration(math.Exp2(float64(failedQueries-1))) * time.Second)
 	}
 
 	return count, domains
@@ -56,9 +70,20 @@ func parseDomains(domains string) (subdomains []string, last string) {
 
 func SearchDNSQuery(domain string, position string) (subdomains []string) {
 
-	log.Printf("[%s] Querying SearchDNS position %s", domain, position)
+	log.Printf("[%s] Querying SearchDNS with domain at position `%s`", domain, position)
 	start := time.Now()
-	count, domains := browserFetch(domain, position, "", 0)
+
+	// Create Chrome instance
+	chromeCtx, cancel := chromedp.NewContext(context.Background(), chromedp.WithLogf(log.Printf))
+	defer cancel()
+
+	// Start Chrome
+	if err := chromedp.Run(chromeCtx); err != nil {
+		log.Printf("[%s] Unable to start Chrome: %s", domain, err)
+		return subdomains
+	}
+
+	count, domains := browserFetch(chromeCtx, domain, position, "", 0)
 
 	pageCount, err := parseCount(count)
 	if err != nil {
@@ -68,16 +93,18 @@ func SearchDNSQuery(domain string, position string) (subdomains []string) {
 	subdomains, last := parseDomains(domains)
 
 	log.Printf("[%s] Page count: %d", domain, pageCount)
-	newSubdomains := []string{}
 	for i := 1; int64(i) < pageCount; i++ {
 		log.Printf("[%s] Processing page %d\r", domain, i)
-		_, domains = browserFetch(domain, position, last, len(subdomains)+1)
+		_, domains = browserFetch(chromeCtx, domain, position, last, len(subdomains)+1)
+		time.Sleep(fetchRate)
+
+		var newSubdomains []string
 		newSubdomains, last = parseDomains(domains)
 
-		if i%5 == 0 {
-			log.Printf("[%s] Sleeping...", domain)
-			time.Sleep(300 * time.Second)
-		}
+		// if i%5 == 0 {
+		// 	log.Printf("[%s] Sleeping...", domain)
+		// 	time.Sleep(3 * time.Second)
+		// }
 		subdomains = append(subdomains, newSubdomains...)
 	}
 

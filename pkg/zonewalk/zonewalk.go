@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	dnsTools "saasreconn/pkg/dns"
@@ -17,13 +18,13 @@ import (
 )
 
 const domainnameCharset string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
-
-var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
-
 const defaultPort = 53
+const zoneScanDomainsBufferSize = 100
+const zoneScanResultsBufferSize = 10
 
 // Sets an initial request rate (r/s)
 var requestRate = 50
+var cacheWriteLock sync.Mutex
 
 // Config is a class for configuration of the zone-walking module
 type Config struct {
@@ -38,14 +39,20 @@ type Config struct {
 	Zone       string
 }
 
+// Only one thread can use the random subdomain generator at once as the random implementation is not concurrent
+var randomLock sync.Mutex
+var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 func randomStringWithCharset(length int, charset string) string {
 	var result strings.Builder
 
+	randomLock.Lock()
 	for i := 0; i < length; i++ {
 		index := seededRand.Intn(len(charset))
 		result.WriteByte(charset[index])
 	}
 
+	randomLock.Unlock()
 	return result.String()
 }
 
@@ -132,7 +139,7 @@ func AttemptWalk(config Config) (names []string, isDNSSEC bool) {
 			names = Nsec3ZoneWalking(config, salt, iterations)
 		}
 	} else {
-		log.Printf("[%s] Unexpected DNSSEC record %s", config.Zone, dnssecType)
+		log.Printf("[%s:%s] Unexpected DNSSEC record %s", config.Nameserver, config.Zone, dnssecType)
 	}
 
 	return names, true
@@ -204,7 +211,7 @@ func Nsec3ZoneWalking(config Config, salt string, iterations int) (names []strin
 	}
 
 	if config.Mode != 3 {
-		fmt.Printf("Starting zone-scan...\n")
+		fmt.Printf("[%s:%s] Starting zone-scan (timeout %d)...\n", config.Nameserver, config.Zone, config.Timeout)
 		start := time.Now()
 
 		hashes, exportedList := nsec3ZoneScan(config, salt, iterations, &cachedZoneWalk.List)
@@ -213,13 +220,13 @@ func Nsec3ZoneWalking(config Config, salt string, iterations int) (names []strin
 		sort.Strings(cachedZoneWalk.Hashes)
 
 		elapsed := time.Since(start)
-		fmt.Printf("\nFinished zone-scan...\n")
-		fmt.Printf("[%s] Found %d hashes in %s\n", config.Zone, len(hashes), elapsed)
+		fmt.Printf("\n[%s:%s] Finished zone-scan...\n", config.Nameserver, config.Zone)
+		fmt.Printf("[%s:%s] Found %d hashes in %s\n", config.Nameserver, config.Zone, len(hashes), elapsed)
 	}
 
 	if config.Mode != 2 {
 		if config.Verbose >= 3 {
-			fmt.Printf("Starting hash reversing...\n")
+			fmt.Printf("[%s:%s] Starting hash reversing of %d hashes ...\n", config.Nameserver, config.Zone, len(cachedZoneWalk.Hashes))
 		}
 		var mapping map[string]string
 		if config.Hashcat {
@@ -237,30 +244,27 @@ func Nsec3ZoneWalking(config Config, salt string, iterations int) (names []strin
 			names = append(names, v)
 		}
 		if config.Verbose >= 3 {
-			fmt.Printf("Finished hash reversing...\n")
+			fmt.Printf("[%s:%s] Finished hash reversing...\n", config.Nameserver, config.Zone)
 		}
 	}
 
 	cachedZoneWalk.Updated = time.Now()
 	if config.Cache {
+		cacheWriteLock.Lock()
 		cachedResults := cache.NewCache()
 		cachedResults.UpdateCachedZoneWalkData(config.Zone, cachedZoneWalk)
+		cacheWriteLock.Unlock()
 	}
 
 	return names
 }
 
 func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *cache.CachedZoneList) (hashes []string, treeJSON cache.CachedZoneList) {
-	batchSize := 100
-	bufferSize := 10
-
 	zoneList := CreateZoneList(*cachedZoneList)
 
-	accumulatedHashes := make(chan []ZoneRecord, bufferSize)
-	pendingLookups := make(chan string, batchSize)
-	pendingResults := make(chan *dns.Msg, bufferSize)
-
-	fmt.Printf("[%s] Starting zone enumeration (timeout %d)\n", config.Zone, config.Timeout)
+	accumulatedHashes := make(chan []ZoneRecord, zoneScanDomainsBufferSize)
+	pendingLookups := make(chan string, zoneScanDomainsBufferSize)
+	pendingResults := make(chan *dns.Msg, zoneScanResultsBufferSize)
 
 	timeout := time.After(time.Duration(config.Timeout) * time.Second)
 	tick := time.Tick(time.Second)
@@ -269,20 +273,18 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 	// Start domain names generator / pre-hashing
 	go func() {
 		for {
-			for hashCount := 0; hashCount < batchSize; hashCount++ {
-				// Generate a random subdomain name with 160 bits ot randomness
-				// Our domain name alphabet consists of 63 symbols and 63^27 approx 2^160
-				randomDomain := fmt.Sprintf("%s.%s", randomStringWithCharset(27, domainnameCharset), config.Zone)
-				randomDomainHash := dns.HashName(randomDomain, dns.SHA1, uint16(iterations), salt)
+			// Generate a random subdomain name with 160 bits ot randomness
+			// Our domain name alphabet consists of 63 symbols and 63^27 approx 2^160
+			randomDomain := fmt.Sprintf("%s.%s", randomStringWithCharset(27, domainnameCharset), config.Zone)
+			randomDomainHash := dns.HashName(randomDomain, dns.SHA1, uint16(iterations), salt)
 
-				closestHash := zoneList.Closest(randomDomainHash)
-				// Do not peform a DNS query if we already have connected the zone map for the new domain
-				if closestHash.Next != "" && closestHash.Next >= randomDomainHash {
-					continue
-				}
-
-				pendingLookups <- randomDomain
+			closestHash := zoneList.Closest(randomDomainHash)
+			// Do not peform a DNS query if we already have connected the zone map for the new domain
+			if closestHash.Next != "" && closestHash.Next >= randomDomainHash {
+				continue
 			}
+
+			pendingLookups <- randomDomain
 		}
 	}()
 
@@ -291,9 +293,7 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 	go func() {
 		for {
 			start := time.Now()
-			// fmt.Printf("Stalled waiting for hashes %d- ", len(pendingLookups))
 			domainLookup := <-pendingLookups
-			// fmt.Printf("Finished waiting for hashes\n")
 			hashDelayAccum += int(time.Since(start).Milliseconds())
 			hashDelayCount++
 			dnsQueriesCount++
@@ -314,14 +314,14 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 				if rr.Header().Rrtype == dns.TypeNSEC3 {
 					algorithm := int(rr.(*dns.NSEC3).Hash)
 					if algorithm != 1 {
-						log.Printf("[%s] Unsupported NSEC3 hashing algorithm %d", config.Zone, algorithm)
+						log.Printf("[%s:%s] Unsupported NSEC3 hashing algorithm %d", config.Nameserver, config.Zone, algorithm)
 						return
 					}
 
 					usedIterations := int(rr.(*dns.NSEC3).Iterations)
 					usedSalt := rr.(*dns.NSEC3).Salt
 					if usedIterations != iterations || usedSalt != salt {
-						log.Printf("[%s] Zone changes its salt, or number of iterations, aborting...", config.Zone)
+						log.Printf("[%s:%s] Zone changes its salt, or number of iterations, aborting...", config.Nameserver, config.Zone)
 						return
 					}
 
@@ -352,13 +352,25 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 		case <-timeout:
 			return zoneList.HashedNames(), zoneList.ExportList()
 		case <-tick:
-			fmt.Printf("[%s] Found %d hashes with coverage %s, queries %d, speed %d/second\r", config.Zone, zoneList.records(), zoneList.Coverage(), dnsQueriesCount, 2*(zoneList.records()-lastCount))
+			if config.Verbose >= 3 {
+				fmt.Printf("[%s:%s] Found %d hashes with coverage %s, queries %d, speed %d/second\r",
+					config.Nameserver,
+					config.Zone,
+					zoneList.records(),
+					zoneList.Coverage(),
+					dnsQueriesCount,
+					2*(zoneList.records()-lastCount))
+			}
 			lastCount = zoneList.records()
-			fmt.Printf("\nAverage delays %.2f for pre-hashing, %.2f for dns queries, %.2f for processing DNS response, %.2f for adding to database\n",
-				float64(hashDelayAccum)/float64(hashDelayCount),
-				float64(dnsQueryDelayAccum)/float64(dnsQueryDelayCount),
-				float64(dnsRespProcessAccum)/float64(dnsRespProcessCount),
-				float64(hashAddAccum)/float64(hashAddCount))
+			if config.Verbose >= 4 {
+				log.Printf("\n[%s:%s] Average delays %.2fms for pre-hashing, %.2fms for dns queries, %.2fms for processing DNS response, %.2fms for adding to database\n",
+					config.Nameserver,
+					config.Zone,
+					float64(hashDelayAccum)/float64(hashDelayCount),
+					float64(dnsQueryDelayAccum)/float64(dnsQueryDelayCount),
+					float64(dnsRespProcessAccum)/float64(dnsRespProcessCount),
+					float64(hashAddAccum)/float64(hashAddCount))
+			}
 		default:
 			start := time.Now()
 			batchRecords := <-accumulatedHashes
@@ -401,7 +413,7 @@ func reverseNSEC3Hashes(config Config, salt string, iterations int, hashes []str
 	}
 
 	if config.Verbose >= 3 {
-		fmt.Printf("Dictionary of %d entries\n", count)
+		fmt.Printf("[%s:%s] Zone reversing used dictionary of %d entries\n", config.Nameserver, config.Zone, count)
 	}
 
 	return mapping

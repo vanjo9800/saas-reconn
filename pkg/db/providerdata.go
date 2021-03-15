@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"regexp"
+	"saasreconn/pkg/tools"
 	"sort"
 	"strings"
 	"time"
@@ -34,20 +35,6 @@ func (l SubdomainList) Less(i, j int) bool {
 	return l[i].Confidence > l[j].Confidence
 }
 func (l SubdomainList) Swap(i, j int) { l[i], l[j] = l[j], l[i] }
-
-func uniqueStrings(arr []string) []string {
-	flags := make(map[string]bool)
-	for _, element := range arr {
-		flags[element] = true
-	}
-
-	var uniqueElements []string
-	for element, _ := range flags {
-		uniqueElements = append(uniqueElements, element)
-	}
-
-	return uniqueElements
-}
 
 // MapStringNamesToSubdomain applies a certain confidence score to a string array of subdomains
 func MapStringNamesToSubdomain(domainNames []string, confidenceScore int, source string) (domains []Subdomain) {
@@ -130,7 +117,7 @@ func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains [
 			addedDomains = append(addedDomains, domain)
 		}
 		uniqueDomains[domain.Name] = domain.Confidence
-		sourcesDomains[domain.Name] = uniqueStrings(append(sourcesDomains[domain.Name], domain.DiscoveredBy...))
+		sourcesDomains[domain.Name] = tools.UniqueStrings(append(sourcesDomains[domain.Name], domain.DiscoveredBy...))
 	}
 
 	data.Subdomains[rootDomain] = []Subdomain{}
@@ -155,7 +142,7 @@ func (data *ProviderData) AsString(onlyPrefix bool) (subdomains []string) {
 	for subdomain, domainsArray := range data.Subdomains {
 		for _, domain := range domainsArray {
 			if onlyPrefix {
-				subdomains = append(subdomains, strings.Trim(domain.Name, subdomain))
+				subdomains = append(subdomains, strings.TrimSuffix(domain.Name, "."+subdomain))
 			} else {
 				subdomains = append(subdomains, domain.Name)
 			}

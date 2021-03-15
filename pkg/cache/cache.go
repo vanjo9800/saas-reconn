@@ -7,7 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"strings"
+	"saasreconn/pkg/tools"
 	"time"
 )
 
@@ -40,16 +40,6 @@ type CachedZoneWalk struct {
 	List       CachedZoneList
 	Guessed    map[string]string
 	Updated    time.Time
-}
-
-/* HELPER FUNCTIONS */
-
-// nameToPath is a method which escapes a name, so we can use it as a filename
-func nameToPath(filename string) string {
-	escapedName := filename
-	escapedName = strings.ReplaceAll(escapedName, "/|\\| ", "_")
-
-	return escapedName
 }
 
 /* INITIALISATION */
@@ -149,7 +139,7 @@ func (cache *Cache) fetchFromCache(path string, filename string) (data []byte, e
 		return nil, errors.New("Could not initialise cache")
 	}
 
-	byteData, err := ioutil.ReadFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, nameToPath(filename)))
+	byteData, err := ioutil.ReadFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, tools.NameToPath(filename)))
 	if err != nil {
 		log.Printf("[%s/%s] Could not find existing cache data %s", path, filename, err)
 		return []byte("{}"), nil
@@ -210,7 +200,7 @@ func (cache *Cache) saveCachedData(path string, filename string, data []byte) er
 		return errors.New("Could not initialise cache")
 	}
 
-	err := ioutil.WriteFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, nameToPath(filename)), data, 0755)
+	err := ioutil.WriteFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, tools.NameToPath(filename)), data, 0755)
 	if err != nil {
 		return errors.New("Failed to write back to cache")
 	}
@@ -239,7 +229,7 @@ func (cache *Cache) deleteFile(path string, filename string) bool {
 
 	// Check if cached data exists and delete only if there
 	if _, err := os.Stat(fmt.Sprintf("%s/%s/", cache.root, path)); os.IsExist(err) {
-		err := os.Remove(fmt.Sprintf("%s/%s/%s.json", cache.root, path, nameToPath(filename)))
+		err := os.Remove(fmt.Sprintf("%s/%s/%s.json", cache.root, path, tools.NameToPath(filename)))
 		if err != nil {
 			log.Fatal("Could not detele data file")
 			return false

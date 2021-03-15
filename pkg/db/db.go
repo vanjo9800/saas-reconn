@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"saasreconn/pkg/tools"
 	"strings"
 )
 
@@ -13,17 +14,6 @@ import (
 type Database struct {
 	initialised bool
 	root        string
-}
-
-// nameToPath is a method which escapes a name, so we can use it as a filename
-func nameToPath(filename string) string {
-	// Escape symbols
-	escapedName := filename
-	escapedName = strings.ReplaceAll(escapedName, " ", " ")
-	escapedName = strings.ReplaceAll(escapedName, "\\", "_")
-	escapedName = strings.ReplaceAll(escapedName, "/", " ")
-
-	return escapedName
 }
 
 // NewDatabase constructs a new uninitialised database
@@ -79,7 +69,7 @@ func (db *Database) fetchDataForProvider(providerName string) (providerData *Pro
 		return nil, errors.New("Could not initialise database")
 	}
 
-	data, err := ioutil.ReadFile(db.root + nameToPath(providerName) + ".json")
+	data, err := ioutil.ReadFile(db.root + tools.NameToPath(providerName) + ".json")
 	if err != nil {
 		log.Printf("[%s] Could not find existing provider data", providerName)
 		return EmptyProviderData(providerName), nil
@@ -113,7 +103,7 @@ func (db *Database) saveProviderData(data *ProviderData) error {
 		return err
 	}
 
-	err = ioutil.WriteFile(db.root+nameToPath(data.ProviderName)+".json", dataJSON, 0755)
+	err = ioutil.WriteFile(db.root+tools.NameToPath(data.ProviderName)+".json", dataJSON, 0755)
 	if err != nil {
 		log.Fatal("Failed to write provider data file for provider " + data.ProviderName)
 		return err
@@ -151,7 +141,7 @@ func (db *Database) DeleteProvider(providerName string) bool {
 
 	// Check if provider data exists and delete only if there
 	if _, err := os.Stat(db.root); os.IsExist(err) {
-		err := os.Remove(db.root + nameToPath(providerName) + ".json")
+		err := os.Remove(db.root + tools.NameToPath(providerName) + ".json")
 		if err != nil {
 			log.Fatal("Could not detele data file")
 			return false

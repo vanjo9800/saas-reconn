@@ -89,12 +89,12 @@ func CreateZoneList(cachedZoneList cache.CachedZoneList) *ZoneList {
 
 func (list *ZoneList) updateNextRecord(record ZoneRecord, newNext string) {
 	list.addingMutex.Lock()
-	log.Printf("Record update found for %s: old next %s, new next %s", record.Name, record.Next, newNext)
-	if record.Next > newNext {
-		log.Printf("A record has been added: %s", newNext)
-	} else {
-		log.Printf("A record has been removed: %s", newNext)
-	}
+	// log.Printf("Record update found for %s: old next %s, new next %s", record.Name, record.Next, newNext)
+	// if record.Next > newNext {
+	// 	log.Printf("A record has been added: %s", newNext)
+	// } else {
+	// 	log.Printf("A record has been removed: %s", newNext)
+	// }
 	var toRemove []string
 	current := record
 	for current.Next != "" && current.Next < newNext {
@@ -119,12 +119,12 @@ func (list *ZoneList) updateNextRecord(record ZoneRecord, newNext string) {
 
 func (list *ZoneList) updatePrevRecord(record ZoneRecord, newPrev string) {
 	list.addingMutex.Lock()
-	log.Printf("Record update found for %s: old previous %s, new previous %s", record.Name, record.Prev, newPrev)
-	if record.Prev < newPrev {
-		log.Printf("A record has been added: %s", newPrev)
-	} else {
-		log.Printf("A record has been removed: %s", newPrev)
-	}
+	// log.Printf("Record update found for %s: old previous %s, new previous %s", record.Name, record.Prev, newPrev)
+	// if record.Prev < newPrev {
+	// 	log.Printf("A record has been added: %s", newPrev)
+	// } else {
+	// 	log.Printf("A record has been removed: %s", newPrev)
+	// }
 	var toRemove []string
 	current := record
 	for current.Prev != "" && current.Prev > newPrev {
