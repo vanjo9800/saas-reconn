@@ -39,7 +39,7 @@ func nsec3HashToNumber(hash string) *big.Int {
 	return number
 }
 
-func coveredDistance(hash1 string, hash2 string) *big.Int {
+func CoveredDistance(hash1 string, hash2 string) *big.Int {
 
 	number1 := nsec3HashToNumber(hash1)
 	number2 := nsec3HashToNumber(hash2)
@@ -110,7 +110,7 @@ func (list *ZoneList) updateNextRecord(record ZoneRecord, newNext string) {
 		nextRecord.Prev = ""
 		list.Names.Put(nextRecord.Name, nextRecord)
 	}
-	list.ExpectedSize.Add(&list.ExpectedSize, coveredDistance(current.Name, lastRecordedNameInChain))
+	list.ExpectedSize.Add(&list.ExpectedSize, CoveredDistance(current.Name, lastRecordedNameInChain))
 	for i := range toRemove {
 		list.Names.Remove(toRemove[i])
 	}
@@ -140,7 +140,7 @@ func (list *ZoneList) updatePrevRecord(record ZoneRecord, newPrev string) {
 		prevRecord.Next = ""
 		list.Names.Put(prevRecord.Name, prevRecord)
 	}
-	list.ExpectedSize.Add(&list.ExpectedSize, coveredDistance(lastRecordedNameInChain, current.Name))
+	list.ExpectedSize.Add(&list.ExpectedSize, CoveredDistance(lastRecordedNameInChain, current.Name))
 	for i := range toRemove {
 		list.Names.Remove(toRemove[i])
 	}
@@ -192,7 +192,7 @@ func (list *ZoneList) AddRecord(previous string, next string) {
 	list.addingMutex.Unlock()
 
 	list.addingMutex.Lock()
-	list.ExpectedSize.Sub(&list.ExpectedSize, coveredDistance(previous, next))
+	list.ExpectedSize.Sub(&list.ExpectedSize, CoveredDistance(previous, next))
 	list.addingMutex.Unlock()
 }
 

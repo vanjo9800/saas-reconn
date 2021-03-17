@@ -69,6 +69,7 @@ func main() {
 	var wordlists []string
 	if *wordlist == "" {
 		wordlists = zonewalk.WordlistBank()
+		wordlists = append(wordlists, "provider-database")
 	} else {
 		wordlists = append(wordlists, *wordlist)
 	}
@@ -92,17 +93,19 @@ func main() {
 				continue
 			}
 			config := zonewalk.Config{
-				Cache:    true,
-				Hashcat:  false, //*hashcat,
-				Mode:     3,
-				Verbose:  *verbose,
-				Wordlist: wordlist,
-				Zone:     zone,
+				MappingCache: true,
+				GuessesCache: false,
+				UpdateCache:  false,
+				Hashcat:      false, //*hashcat,
+				Mode:         3,
+				Verbose:      *verbose,
+				Wordlist:     wordlist,
+				Zone:         zone,
 			}
 			for params := range zoneData {
 				salt := strings.Split(params, ":")[0]
 				iterations, _ := strconv.Atoi(strings.Split(params, ":")[1])
-				guessed := zonewalk.Nsec3ZoneWalking(config, salt, iterations)
+				guessed := zonewalk.Nsec3ZoneReversing(config, salt, iterations)
 				wordlistData = append(wordlistData, fmt.Sprintf("%d", len(guessed)))
 				fmt.Printf("%d names guessed for zone %s\n", len(guessed), zone)
 			}

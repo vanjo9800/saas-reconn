@@ -9,11 +9,25 @@ func UniqueStrings(arr []string) []string {
 	}
 
 	var uniqueElements []string
-	for element, _ := range flags {
+	for element := range flags {
 		uniqueElements = append(uniqueElements, element)
 	}
 
 	return uniqueElements
+}
+
+func CleanDomainName(name string) string {
+	name = strings.TrimPrefix(name, "*.")
+	name = strings.TrimSuffix(name, ".")
+
+	return name
+}
+
+func ExtractHash(dnsEntry string, zone string) string {
+	dnsEntry = strings.TrimSuffix(dnsEntry, ".")
+	dnsEntry = strings.TrimSuffix(dnsEntry, "."+zone)
+
+	return strings.ToUpper(dnsEntry)
 }
 
 // NameToPath is a method which escapes a name, so we can use it as a filename

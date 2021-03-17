@@ -5,50 +5,21 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sync"
 
 	"saasreconn/pkg/db"
-	dnsTools "saasreconn/pkg/dns"
 	"saasreconn/pkg/provider"
 	"saasreconn/pkg/zonewalk"
 )
 
 const zoneWalkConfidence = 70
 
-func runZoneWalking(resultsDatabase *db.Database, name string, config zonewalk.Config, nameserver string) {
-	var nameservers []string
-	if nameserver != "" {
-		nameservers = append(nameservers, nameserver)
-	} else {
-		nameservers = dnsTools.GetNameservers(config.Zone)
+func runZoneWalking(resultsDatabase *db.Database, name string, config zonewalk.Config) {
+	found, isDNSSEC := zonewalk.AttemptWalk(config)
+	if isDNSSEC {
+		log.Printf("[%s] Found %d names from DNSSEC zone-walking", config.Zone, len(found))
 	}
-	var zoneWalkers sync.WaitGroup
-	foundNames := make(chan []string)
-	for _, nameserver := range nameservers {
-		zoneWalkers.Add(1)
-		log.Printf("Starting a new enumeration %s", nameserver)
-		go func(nameserver string, zoneWalkers *sync.WaitGroup) {
-			config.Nameserver = nameserver
-			found, isDNSSEC := zonewalk.AttemptWalk(config)
-			if isDNSSEC {
-				log.Printf("[%s:%s] Found %d names from DNSSEC zone-walking", nameserver, config.Zone, len(found))
-				foundNames <- found
-			}
-			zoneWalkers.Done()
-		}(nameserver, &zoneWalkers)
-	}
-
-	go func() {
-		for {
-			found, more := <-foundNames
-			if !more {
-				break
-			}
-			diff, _ := resultsDatabase.UpdateProvider(name, config.Zone, db.MapStringNamesToSubdomain(found, zoneWalkConfidence, "Zonewalking"))
-			diff.Dump()
-		}
-	}()
-	zoneWalkers.Wait()
+	diff, _ := resultsDatabase.UpdateProvider(name, config.Zone, db.MapStringNamesToSubdomain(found, zoneWalkConfidence, "Zonewalking"))
+	diff.Dump()
 }
 
 func main() {
@@ -76,16 +47,19 @@ func main() {
 	log.Println("Performing zone-walking")
 
 	config := zonewalk.Config{
-		Timeout: *timeout,
-		Cache:   !*noCache,
-		Mode:    *walkmode,
-		Hashcat: *hashcat,
-		Verbose: *verbose,
+		Nameserver:   *nameserver,
+		Timeout:      *timeout,
+		MappingCache: !*noCache,
+		GuessesCache: !*noCache,
+		UpdateCache:  true, // standalone
+		Mode:         *walkmode,
+		Hashcat:      *hashcat,
+		Verbose:      *verbose,
 	}
 
 	if *domain != "" {
 		config.Zone = *domain
-		runZoneWalking(resultsDatabase, *domain, config, *nameserver)
+		runZoneWalking(resultsDatabase, *domain, config)
 		os.Exit(0)
 	}
 
@@ -99,7 +73,7 @@ func main() {
 		}
 		for _, domain := range data.Subdomain {
 			config.Zone = domain
-			runZoneWalking(resultsDatabase, name, config, *nameserver)
+			runZoneWalking(resultsDatabase, name, config)
 		}
 	}
 }

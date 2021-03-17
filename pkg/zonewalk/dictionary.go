@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"saasreconn/pkg/db"
+	"saasreconn/pkg/tools"
 	"strings"
 )
 
@@ -15,24 +16,23 @@ const wordlistDirectory string = "resources/wordlists/"
 func BuildLocalDictionary(wordlist string, dictionary chan<- string) {
 	var wordlists []string
 	if wordlist == "" {
+		addProviderData(dictionary)
 		wordlists = WordlistBank()
+	} else if wordlist == "provider-database" {
+		addProviderData(dictionary)
 	} else {
 		wordlists = append(wordlists, wordlist)
 	}
 	for _, list := range wordlists {
 		addWordList(list, dictionary)
 	}
-	addProviderData(dictionary)
 	close(dictionary)
 }
 
 func cleanProviderName(name string, base string) string {
-	name = strings.TrimPrefix(name, "*.")
-	name = strings.TrimSuffix(name, ".")
-	name = strings.TrimSuffix(name, base)
-	name = strings.TrimSuffix(name, ".")
+	name = strings.TrimSuffix(tools.CleanDomainName(name), base)
 
-	return name
+	return tools.CleanDomainName(name)
 }
 
 func addProviderData(dictionary chan<- string) {
@@ -48,7 +48,12 @@ func addProviderData(dictionary chan<- string) {
 		}
 		for base, results := range providerData.Subdomains {
 			for _, subdomain := range results {
-				dictionary <- cleanProviderName(subdomain.Name, base)
+				cleanName := cleanProviderName(subdomain.Name, base)
+				nameParts := strings.Split(cleanName, ".")
+				nameParts = append(nameParts, cleanName)
+				for _, namePart := range nameParts {
+					dictionary <- namePart
+				}
 			}
 		}
 	}
@@ -80,10 +85,15 @@ func exportProviderData(path string, filename string) {
 		}
 		for base, results := range providerData.Subdomains {
 			for _, subdomain := range results {
-				_, err := providerDictionary.WriteString(cleanProviderName(subdomain.Name, base) + "\n")
-				if err != nil {
-					log.Printf("ExportProviderData: Error writing to provider dictionary file %s: %s", filename, err)
-					return
+				cleanName := cleanProviderName(subdomain.Name, base)
+				namesToExplore := strings.Split(cleanName, ".")
+				namesToExplore = append(namesToExplore, cleanName)
+				for _, name := range namesToExplore {
+					_, err := providerDictionary.WriteString(name + "\n")
+					if err != nil {
+						log.Printf("ExportProviderData: Error writing to provider dictionary file %s: %s", filename, err)
+						return
+					}
 				}
 			}
 		}

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log"
+	"saasreconn/pkg/tools"
 	"time"
 
 	"github.com/jackc/pgconn"
@@ -41,7 +42,8 @@ func CrtShQuery(domain string) (subdomains []string) {
 
 	result := pgConn.ExecParams(context.Background(), "SELECT ci.NAME_VALUE NAME_VALUE FROM certificate_identity ci WHERE ci.NAME_TYPE = 'dNSName' AND reverse(lower(ci.NAME_VALUE)) LIKE reverse(lower($1)) LIMIT 100000;", [][]byte{[]byte("%." + domain)}, nil, nil, nil)
 	for result.NextRow() {
-		subdomains = append(subdomains, string(result.Values()[0]))
+		cleanName := tools.CleanDomainName(string(result.Values()[0]))
+		subdomains = append(subdomains, cleanName)
 		if len(subdomains) > 100000 {
 			log.Printf("[%s] Read more than 100000 domains, skipping for now...", domain)
 			break

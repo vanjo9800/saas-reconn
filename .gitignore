@@ -1,4 +1,5 @@
 /data/
+/tmp/
 /temp/
 configs/credentials.yaml
 /resources/wordlists
