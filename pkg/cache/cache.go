@@ -26,10 +26,9 @@ type CachedDomainCheck struct {
 
 // CachedZoneList is an instance of a cached ZoneList
 type CachedZoneList struct {
-	Names        []string
-	Prev         []string
-	Next         []string
-	ExpectedSize string
+	Names []string
+	Prev  []string
+	Next  []string
 }
 
 // CachedZoneWalk is an instance of a zonewalk in our caching system

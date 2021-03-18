@@ -20,9 +20,16 @@ type ZoneRecord struct {
 // ZoneList is the instance of a LinkedList representing the zone map
 // It also has some helper parameters such as number of links, number of records and expected size
 type ZoneList struct {
-	ExpectedSize big.Int
-	Names        *rbt.Tree
-	addingMutex  sync.Mutex
+	DistanceSum big.Int
+	Distances   *rbt.Tree
+	Names       *rbt.Tree
+	addingMutex sync.Mutex
+}
+
+func BigIntComparator(a, b interface{}) int {
+	aBigInt := a.(*big.Int)
+	bBigInt := b.(*big.Int)
+	return aBigInt.Cmp(bBigInt)
 }
 
 var sha1MaxSize *big.Int = new(big.Int).Exp(big.NewInt(2), big.NewInt(160), big.NewInt(0))
@@ -30,7 +37,7 @@ var sha1MaxSize *big.Int = new(big.Int).Exp(big.NewInt(2), big.NewInt(160), big.
 func nsec3HashToNumber(hash string) *big.Int {
 	sha1Data, err := base32.HexEncoding.DecodeString(hash)
 	if err != nil {
-		log.Printf("Could not parse base32 hash %s due to %s", hash, err)
+		log.Printf("Unexpected error: Could not parse base32 hash %s due to %s", hash, err)
 		return nil
 	}
 
@@ -55,36 +62,114 @@ func CoveredDistance(hash1 string, hash2 string) *big.Int {
 	return number2.Add(result.Sub(sha1MaxSize, number1), number2)
 }
 
+func (list *ZoneList) addDistanceMetric(distance *big.Int) {
+	// Add to overall distance sum
+	list.DistanceSum.Add(&list.DistanceSum, distance)
+
+	// Add to distances tree
+	val, ok := list.Distances.Get(distance)
+	if !ok {
+		list.Distances.Put(distance, 1)
+	} else {
+		list.Distances.Put(distance, val.(int)+1)
+	}
+}
+
+func (list *ZoneList) removeDistanceMetric(distance *big.Int) {
+	// Remove from overall distance sum
+	list.DistanceSum.Sub(&list.DistanceSum, distance)
+
+	// Remove from distance tree
+	val, ok := list.Distances.Get(distance)
+	if !ok {
+		log.Printf("Unexpected error: Error distance %s not found in tree", distance)
+	} else {
+		if val.(int) == 1 {
+			list.Distances.Remove(distance)
+		} else {
+			list.Distances.Put(distance, val.(int)-1)
+		}
+	}
+}
+
+const quantiles = 10
+
+var quantileWeights = []float64{0.41, 0.15, 0.10, 0.08, 0.07, 0.05, 0.05, 0.04, 0.03, 0.02}
+
 // Coverage returns an estimated coverage of the zone based on the number of current entries and the maximum projected number of entries
-func (list *ZoneList) Coverage() string {
-	result := new(big.Float)
-	return result.Quo(new(big.Float).SetInt(big.NewInt(list.records())), new(big.Float).SetInt(&list.ExpectedSize)).String()
+func (list *ZoneList) Coverage() (string, string) {
+
+	list.addingMutex.Lock()
+
+	// Unquantiled
+	result1 := new(big.Float)
+	result1.Quo(new(big.Float).SetInt(&list.DistanceSum), big.NewFloat(float64(list.Distances.Size())))
+	result1.Quo(new(big.Float).SetInt(sha1MaxSize), result1)
+
+	// Quantiled
+	result2 := big.NewFloat(0.0)
+	perQuantile := list.Distances.Size() / quantiles
+	remainder := list.Distances.Size() % quantiles
+	distanceIterator := list.Distances.Iterator()
+	distanceIterator.Begin()
+	quantileSum := big.NewFloat(0.0)
+	quantileIndex := 0
+	count := 0
+	for distanceIterator.Next() {
+		currentDistanceFloat := new(big.Float).SetInt(distanceIterator.Key().(*big.Int))
+		countOfDistance := distanceIterator.Value().(int)
+		for distanceCount := 0; distanceCount < countOfDistance; distanceCount++ {
+			if count >= perQuantile {
+				if count == perQuantile && remainder > 0 {
+					remainder--
+				} else {
+					quantileSum.Mul(quantileSum, big.NewFloat(quantileWeights[quantileIndex]))
+					quantileSum.Quo(quantileSum, big.NewFloat(float64(count)))
+					result2.Add(result2, quantileSum)
+					quantileIndex++
+					quantileSum = quantileSum.SetFloat64(0.0)
+					count = 1
+				}
+			}
+			quantileSum = quantileSum.Add(quantileSum, currentDistanceFloat)
+			count++
+		}
+	}
+	result2.Quo(new(big.Float).SetInt(sha1MaxSize), result2)
+
+	list.addingMutex.Unlock()
+
+	return result1.String(), result2.String()
 }
 
 // CreateZoneList constructs an empty zone list object
-func CreateZoneList(cachedZoneList cache.CachedZoneList) *ZoneList {
+func CreateZoneList(cachedZoneList cache.CachedZoneList) (list *ZoneList) {
 	if len(cachedZoneList.Names) == 0 {
-		return &ZoneList{
-			ExpectedSize: *sha1MaxSize,
-			Names:        rbt.NewWithStringComparator(),
+		list = &ZoneList{
+			DistanceSum: *big.NewInt(0),
+			Distances:   rbt.NewWith(BigIntComparator),
+			Names:       rbt.NewWithStringComparator(),
 		}
+		return list
 	}
 
-	hashesTree := rbt.NewWithStringComparator()
+	list = &ZoneList{
+		DistanceSum: *big.NewInt(0),
+		Distances:   rbt.NewWith(BigIntComparator),
+		Names:       rbt.NewWithStringComparator(),
+	}
 	for index := range cachedZoneList.Names {
-		hashesTree.Put(cachedZoneList.Names[index], ZoneRecord{
+		list.Names.Put(cachedZoneList.Names[index], ZoneRecord{
 			Name: cachedZoneList.Names[index],
 			Prev: cachedZoneList.Prev[index],
 			Next: cachedZoneList.Next[index],
 		})
+		if cachedZoneList.Next[index] != "" {
+			list.addDistanceMetric(CoveredDistance(cachedZoneList.Names[index], cachedZoneList.Next[index]))
+		}
 	}
-	expectedSize := new(big.Int)
-	expectedSize.SetString(cachedZoneList.ExpectedSize, 10)
 
-	return &ZoneList{
-		ExpectedSize: *expectedSize,
-		Names:        hashesTree,
-	}
+	return list
 }
 
 func (list *ZoneList) updateNextRecord(record ZoneRecord, newNext string) {
@@ -96,21 +181,26 @@ func (list *ZoneList) updateNextRecord(record ZoneRecord, newNext string) {
 	// 	log.Printf("A record has been removed: %s", newNext)
 	// }
 	var toRemove []string
+
+	// Remove all intermediate hashes (they are no longer valid!)
 	current := record
 	for current.Next != "" && current.Next < newNext {
+		list.removeDistanceMetric(CoveredDistance(current.Name, current.Next))
 		toRemove = append(toRemove, current.Next)
 		currentData, _ := list.Names.Get(current.Next)
 		current = currentData.(ZoneRecord)
 	}
-	lastRecordedNameInChain := current.Name
+
+	// Break connection with last removed hash
 	if current.Next != "" {
-		lastRecordedNameInChain = current.Next
+		list.removeDistanceMetric(CoveredDistance(current.Name, current.Next))
 		nextRecordData, _ := list.Names.Get(current.Next)
 		nextRecord := nextRecordData.(ZoneRecord)
 		nextRecord.Prev = ""
 		list.Names.Put(nextRecord.Name, nextRecord)
 	}
-	list.ExpectedSize.Add(&list.ExpectedSize, CoveredDistance(current.Name, lastRecordedNameInChain))
+
+	// Actually remove hashes
 	for i := range toRemove {
 		list.Names.Remove(toRemove[i])
 	}
@@ -119,28 +209,33 @@ func (list *ZoneList) updateNextRecord(record ZoneRecord, newNext string) {
 
 func (list *ZoneList) updatePrevRecord(record ZoneRecord, newPrev string) {
 	list.addingMutex.Lock()
-	// log.Printf("Record update found for %s: old previous %s, new previous %s", record.Name, record.Prev, newPrev)
-	// if record.Prev < newPrev {
-	// 	log.Printf("A record has been added: %s", newPrev)
-	// } else {
-	// 	log.Printf("A record has been removed: %s", newPrev)
-	// }
+	log.Printf("Record update found for %s: old previous %s, new previous %s", record.Name, record.Prev, newPrev)
+	if record.Prev < newPrev {
+		log.Printf("A record has been added: %s", newPrev)
+	} else {
+		log.Printf("A record has been removed: %s", newPrev)
+	}
 	var toRemove []string
+
+	// Remove all intermediate hashes (they are no longer valid!)
 	current := record
 	for current.Prev != "" && current.Prev > newPrev {
+		list.removeDistanceMetric(CoveredDistance(current.Prev, current.Name))
 		toRemove = append(toRemove, current.Prev)
 		currentData, _ := list.Names.Get(current.Prev)
 		current = currentData.(ZoneRecord)
 	}
-	lastRecordedNameInChain := current.Name
+
+	// Break connection with last removed hash
 	if current.Prev != "" {
-		lastRecordedNameInChain = current.Prev
+		list.removeDistanceMetric(CoveredDistance(current.Prev, current.Name))
 		prevRecordData, _ := list.Names.Get(current.Prev)
 		prevRecord := prevRecordData.(ZoneRecord)
 		prevRecord.Next = ""
 		list.Names.Put(prevRecord.Name, prevRecord)
 	}
-	list.ExpectedSize.Add(&list.ExpectedSize, CoveredDistance(lastRecordedNameInChain, current.Name))
+
+	// Actually remove hashes
 	for i := range toRemove {
 		list.Names.Remove(toRemove[i])
 	}
@@ -192,7 +287,7 @@ func (list *ZoneList) AddRecord(previous string, next string) {
 	list.addingMutex.Unlock()
 
 	list.addingMutex.Lock()
-	list.ExpectedSize.Sub(&list.ExpectedSize, CoveredDistance(previous, next))
+	list.addDistanceMetric(CoveredDistance(previous, next))
 	list.addingMutex.Unlock()
 }
 
@@ -226,10 +321,9 @@ func (list *ZoneList) HashedNames() (result []string) {
 // ExportList exports a constructed ZoneList
 func (list *ZoneList) ExportList() (exportList cache.CachedZoneList) {
 	exportList = cache.CachedZoneList{
-		Names:        []string{},
-		Prev:         []string{},
-		Next:         []string{},
-		ExpectedSize: list.ExpectedSize.String(),
+		Names: []string{},
+		Prev:  []string{},
+		Next:  []string{},
 	}
 
 	for _, node := range list.Names.Values() {

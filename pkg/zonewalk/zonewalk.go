@@ -441,11 +441,13 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 			return zoneList.HashedNames(), zoneList.ExportList()
 		case <-tick:
 			if config.Verbose >= 3 {
-				fmt.Printf("[%s:%s] Found %d hashes with coverage %s, queries %d, speed %d/second\r",
+				unQCoverage, QCoverage := zoneList.Coverage()
+				fmt.Printf("[%s:%s] Found %d hashes with coverage 1: %s; 2: %s, queries %d, speed %d/second\r",
 					config.Nameserver,
 					config.Zone,
 					zoneList.records(),
-					zoneList.Coverage(),
+					unQCoverage,
+					QCoverage,
 					dnsQueriesCount,
 					2*(zoneList.records()-lastCount))
 			}

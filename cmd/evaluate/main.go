@@ -84,7 +84,7 @@ func main() {
 
 	cachedResults := cache.NewCache()
 	for _, wordlist := range wordlists {
-		fmt.Printf("Examining wordlist %s\n", wordlist)
+		fmt.Printf("\nExamining wordlist %s\n", wordlist)
 		wordlistData := []string{filepath.Base(wordlist), fmt.Sprintf("%d", lineCount(wordlist))}
 		for _, zone := range cachedZones {
 			zoneData, err := cachedResults.FetchZoneWalkForZone(zone)
@@ -107,7 +107,7 @@ func main() {
 				iterations, _ := strconv.Atoi(strings.Split(params, ":")[1])
 				guessed := zonewalk.Nsec3ZoneReversing(config, salt, iterations)
 				wordlistData = append(wordlistData, fmt.Sprintf("%d", len(guessed)))
-				fmt.Printf("%d names guessed for zone %s\n", len(guessed), zone)
+				fmt.Printf("\r%d names guessed for zone %s", len(guessed), zone)
 			}
 
 		}
