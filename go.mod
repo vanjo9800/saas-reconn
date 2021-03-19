@@ -8,7 +8,9 @@ require (
 	github.com/emirpasic/gods v1.12.0 // indirect
 	github.com/google/go-cmp v0.5.5 // indirect
 	github.com/jackc/pgconn v1.8.0 // indirect
+	github.com/johnfercher/maroto v0.31.0 // indirect
 	github.com/miekg/dns v1.1.35 // indirect
+	github.com/unidoc/unipdf/v3 v3.20.0 // indirect
 	go.opencensus.io v0.23.0 // indirect
 	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110 // indirect
 	golang.org/x/oauth2 v0.0.0-20210220000619-9bb904979d93 // indirect
@@ -22,6 +24,7 @@ require (
 	saasreconn/pkg/db v1.0.0
 	saasreconn/pkg/dns v1.0.0
 	saasreconn/pkg/provider v1.0.0
+	saasreconn/pkg/report v0.0.0-00010101000000-000000000000 // indirect
 	saasreconn/pkg/tools v1.0.0
 	saasreconn/pkg/zonewalk v1.0.0
 )
@@ -41,3 +44,5 @@ replace saasreconn/pkg/checks => ./pkg/checks
 replace saasreconn/pkg/cache => ./pkg/cache
 
 replace saasreconn/pkg/tools => ./pkg/tools
+
+replace saasreconn/pkg/report => ./pkg/report

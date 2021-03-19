@@ -13,10 +13,22 @@ import (
 
 const zoneWalkConfidence = 70
 
-func runZoneWalking(resultsDatabase *db.Database, name string, config zonewalk.Config) {
+func runZoneWalking(resultsDatabase *db.Database, name string, config zonewalk.Config, custom bool) {
 	found, isDNSSEC := zonewalk.AttemptWalk(config)
 	if isDNSSEC {
 		log.Printf("[%s] Found %d names from DNSSEC zone-walking", config.Zone, len(found))
+	} else if custom {
+		log.Printf("[%s] No DNSSEC nameserver found", config.Zone)
+		return
+	}
+	if custom {
+		for count, name := range found {
+			if count == 10 {
+				fmt.Printf("\t and %d more\n", len(found)-10)
+				break
+			}
+			fmt.Printf("\t + %s\n", name)
+		}
 	}
 	diff, _ := resultsDatabase.UpdateProvider(name, config.Zone, db.MapStringNamesToSubdomain(found, zoneWalkConfidence, "Zonewalking"))
 	diff.Dump()
@@ -32,6 +44,7 @@ func main() {
 	nameserver := flag.String("nameserver", "", "run zone-walking for a specific nameserver")
 	// threads := flag.Int("threads", runtime.NumCPU(), "number of threads to use within the program (default is the logical number number of processors")
 	timeout := flag.Int("timeout", 60, "number of seconds to run a zone zonewalk mapping")
+	rateLimit := flag.Int("rate-limit", 20, "limit the number of DNS requests per second to avoid blocking (0 for no limit)")
 	walkmode := flag.Int("walkmode", 1, " what mode to use for zone-walking (0 for just DNSSEC test, 1 for both mapping and reversing, 2 for just mapping and storing cache, and 3 for just reversing based on cache)")
 	noCache := flag.Bool("no-cache", false, "a bool whether to use pre-existing")
 	hashcat := flag.Bool("hashcat", false, "use hashcat for reversing NSEC3 hashes")
@@ -53,13 +66,14 @@ func main() {
 		GuessesCache: !*noCache,
 		UpdateCache:  true, // standalone
 		Mode:         *walkmode,
+		RateLimit:    *rateLimit,
 		Hashcat:      *hashcat,
 		Verbose:      *verbose,
 	}
 
 	if *domain != "" {
 		config.Zone = *domain
-		runZoneWalking(resultsDatabase, *domain, config)
+		runZoneWalking(resultsDatabase, *domain, config, true)
 		os.Exit(0)
 	}
 
@@ -73,7 +87,7 @@ func main() {
 		}
 		for _, domain := range data.Subdomain {
 			config.Zone = domain
-			runZoneWalking(resultsDatabase, name, config)
+			runZoneWalking(resultsDatabase, name, config, false)
 		}
 	}
 }

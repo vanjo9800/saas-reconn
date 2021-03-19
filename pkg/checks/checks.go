@@ -2,8 +2,10 @@ package checks
 
 import (
 	"context"
+	"crypto/tls"
 	"io/ioutil"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,7 +20,14 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-const requestTimeout = 10 * time.Second
+var cacheWriteLock sync.Mutex
+
+const maximumFailedAttempts = 15
+const requestTimeout = 20 * time.Second
+const requestBackOff = 200 * time.Millisecond
+const parallelRequests = 5
+
+var requestBurstLimiter chan bool = make(chan bool, parallelRequests)
 
 func cleanBase(base string) string {
 	base = strings.ReplaceAll(base, "/", "_")
@@ -122,39 +131,72 @@ func isInvalidTextResponse(responseBody string, hostname string, base string) bo
 
 func httpSyncRequest(url string, verbosity int) (cleanBody string) {
 	responseBody := make(chan string, 1)
+	time.Sleep(requestBackOff)
+	requestBurstLimiter <- true
+	defer func() {
+		<-requestBurstLimiter
+	}()
+
 	httpAsyncRequest(url, verbosity, responseBody)
-	select {
-	case val := <-responseBody:
-		return val
-	case <-time.After(requestTimeout):
-		if verbosity >= 3 {
-			log.Printf("Request for %s has timed out", url)
-		}
-		return ""
-	}
+	return <-responseBody
 }
 
 func httpAsyncRequest(url string, verbosity int, cleanBody chan<- string) {
 	go func() {
-		resp, err := http.Get(url)
-		if err != nil {
-			if verbosity >= 4 {
-				log.Printf("Could not access page %s: %s", url, err)
+		transportParameters := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		client := &http.Client{
+			Timeout:   requestTimeout,
+			Transport: transportParameters,
+		}
+		resp, httpErr := client.Get(url)
+		if httpErr != nil {
+			ioTimeoutMatch, err := regexp.MatchString(`Timeout exceeded`, httpErr.Error())
+			if err == nil && ioTimeoutMatch {
+				failedAttempts := 0
+				for {
+					time.Sleep(time.Duration(math.Exp2(float64(failedAttempts-1))) * time.Millisecond)
+					resp, err = client.Get(url)
+					if err == nil {
+						break
+					}
+					ioTimeoutMatch, err = regexp.MatchString(`Timeout exceeded`, err.Error())
+					if err == nil && ioTimeoutMatch {
+						if failedAttempts == maximumFailedAttempts {
+							log.Printf("[%s] Exceeded back-off attempts, reporting timeout", url)
+							cleanBody <- ""
+							return
+						}
+						failedAttempts++
+						log.Printf("[%s] Increased failed attempts %d", url, failedAttempts)
+					}
+				}
+			} else {
+				if verbosity >= 4 {
+					noConnectionMatch, err := regexp.MatchString(`no such host|connection refused`, httpErr.Error())
+					if err == nil && !noConnectionMatch {
+						log.Printf("Could not access page %s: %s", url, httpErr)
+					}
+				}
+				cleanBody <- ""
+				return
 			}
-			return
 		}
 		defer resp.Body.Close()
-		pageBody, _ := ioutil.ReadAll(resp.Body)
+		pageBody, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			if verbosity >= 4 {
 				log.Printf("Could not extract page body %s: %s", url, err)
 			}
+			cleanBody <- ""
 			return
 		}
 		if resp.StatusCode >= 400 {
-			if verbosity >= 4 {
+			if verbosity >= 5 {
 				log.Printf("Response for %s has an error code %d, invalidating", url, resp.StatusCode)
 			}
+			cleanBody <- ""
 			return
 		}
 		cleanBody <- string(pageBody)
@@ -163,8 +205,8 @@ func httpAsyncRequest(url string, verbosity int, cleanBody chan<- string) {
 
 func randomPageBody(addressBase AddressBase, verbosity int) (cleanBody string) {
 
-	randomClient1 := "hdmmndjzsj"
-	randomClient2 := "wbuiiionia"
+	randomClient1 := "saas-reconn1"
+	randomClient2 := "saas-reconn2"
 
 	errorPageClean1 := cleanResponse(httpSyncRequest(addressBase.GetUrl(randomClient1), verbosity), randomClient1, addressBase.GetBase())
 	errorPageClean2 := cleanResponse(httpSyncRequest(addressBase.GetUrl(randomClient2), verbosity), randomClient2, addressBase.GetBase())
@@ -211,7 +253,7 @@ func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRan
 	var prefixWorkgroup sync.WaitGroup
 	for _, prefix := range checkRange.Prefixes {
 		prefixWorkgroup.Add(1)
-		go func(prefix string, prefixWorkgroup *sync.WaitGroup) {
+		go func(prefix string, checkRange SubdomainRange, headlessFlag string, errorPageClean string, prefixWorkgroup *sync.WaitGroup) {
 			defer prefixWorkgroup.Done()
 			cachedDomain, err := cachedResults.FetchCachedDomainCheckResults(prefix, cleanBase(checkRange.Base.GetBase()))
 			if err == nil && !noCache && time.Since(cachedDomain.Updated).Hours() < 48 {
@@ -227,7 +269,9 @@ func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRan
 				Address:  []string{},
 			}
 
-			defer cachedResults.UpdateCachedDomainCheckData(prefix, cleanBase(checkRange.Base.GetBase()), *domainData)
+			defer func() {
+				cachedResults.UpdateCachedDomainCheckData(prefix, cleanBase(checkRange.Base.GetBase()), *domainData)
+			}()
 
 			if reflect.TypeOf(checkRange.Base).Name() == "SubdomainBase" {
 				url, err := url.Parse(checkRange.Base.GetUrl(prefix))
@@ -251,7 +295,10 @@ func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRan
 			}
 			cleanBody := cleanResponse(httpSyncRequest(checkRange.Base.GetUrl(prefix), verbosity), prefix, checkRange.Base.GetBase())
 			if cleanBody == "" {
-				if verbosity >= 3 {
+				if strings.HasSuffix(checkRange.Base.GetBase(), "webex.com") {
+					log.Printf("Empty body for %s", prefix)
+				}
+				if verbosity >= 5 {
 					log.Printf("[%s] Could not access subdomain page", checkRange.Base.GetUrl(prefix))
 				}
 				return
@@ -266,8 +313,10 @@ func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRan
 					domainData.PageBody = true
 					validPrefixes <- prefix
 				}
+			} else {
+
 			}
-		}(prefix, &prefixWorkgroup)
+		}(prefix, checkRange, headlessFlag, errorPageClean, &prefixWorkgroup)
 	}
 
 	go func(prefixWorkgroup *sync.WaitGroup) {

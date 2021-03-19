@@ -15,7 +15,6 @@ var timeoutLog map[string]bool = make(map[string]bool)
 
 const failedRequestsThreshold = 10
 const requestTimeout = 4 * time.Second
-const syncRequestTimeout = 10 * time.Second
 const timeoutWaitTime = 200 * time.Millisecond
 
 func buildMessage() (message *dns.Msg) {
@@ -68,16 +67,12 @@ func GetNameservers(domain string) (nameservers []string) {
 
 // SyncQuery is executing a synchronous DNS query waiting for a response, or returning a timeout
 func SyncQuery(nameserver string, queryName string, queryType uint16, verbosity int) (response *dns.Msg) {
-	responseChan := make(chan *dns.Msg, 1)
-	AsyncQuery(nameserver, queryName, queryType, verbosity, responseChan)
-
-	select {
-	case val := <-responseChan:
-		return val
-	case <-time.After(syncRequestTimeout):
-		log.Printf("[%s] Synchronous DNS query for %s to %s timed out", queryName, queryName, nameserver)
-		return nil
+	responseChan := make(chan *dns.Msg)
+	if verbosity >= 5 {
+		log.Printf("[%s] Sending DNSSEC query for %s", nameserver, queryName)
 	}
+	AsyncQuery(nameserver, queryName, queryType, verbosity, responseChan)
+	return <-responseChan
 }
 
 // AsyncQuery is executing an asynchronous DNS query writing the response to a channel passed as a parameter

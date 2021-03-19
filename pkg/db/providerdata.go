@@ -63,7 +63,7 @@ func ProviderDataFromJSON(data []byte) (providerData *ProviderData, err error) {
 	providerData = new(ProviderData)
 	err = json.Unmarshal(data, &providerData)
 	if err != nil {
-		log.Printf("[%s] Invalid provider data %s", providerData.ProviderName, err)
+		log.Printf("[%s] Invalid provider data: %s", providerData.ProviderName, err)
 		return EmptyProviderData(""), err
 	}
 
@@ -74,7 +74,7 @@ func ProviderDataFromJSON(data []byte) (providerData *ProviderData, err error) {
 func (data *ProviderData) ToJSON() (bytes []byte, err error) {
 	jsonOutput, err := json.Marshal(data)
 	if err != nil {
-		log.Fatal("Could not convert to JSON")
+		log.Printf("Could not convert to JSON")
 		return nil, err
 	}
 

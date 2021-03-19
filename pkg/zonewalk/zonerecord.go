@@ -123,12 +123,15 @@ func (list *ZoneList) Coverage() (string, string) {
 				if count == perQuantile && remainder > 0 {
 					remainder--
 				} else {
+					if quantileIndex >= 10 {
+						log.Printf("Something went wrong %d and %d", perQuantile, remainder)
+					}
 					quantileSum.Mul(quantileSum, big.NewFloat(quantileWeights[quantileIndex]))
 					quantileSum.Quo(quantileSum, big.NewFloat(float64(count)))
 					result2.Add(result2, quantileSum)
 					quantileIndex++
 					quantileSum = quantileSum.SetFloat64(0.0)
-					count = 1
+					count = 0
 				}
 			}
 			quantileSum = quantileSum.Add(quantileSum, currentDistanceFloat)
@@ -306,6 +309,25 @@ func (list *ZoneList) Closest(hash string) ZoneRecord {
 		}
 	}
 	return node.Value.(ZoneRecord)
+}
+
+// Covered returns whether a certain hash is covered by the zone information
+func (list *ZoneList) Covered(hash string) bool {
+	// Find its predecessor, or the node itself
+	node := list.Closest(hash)
+	if node.Name != "" && node.Next >= hash {
+		return true
+	}
+
+	// If we know the boundary hashes of the zone, we can discard all others in between them
+	if list.Names.Size() > 0 {
+		node = list.Names.Left().Value.(ZoneRecord)
+		if node.Prev != "" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // HashedNames returns the hashed names of the mapped records in a zone

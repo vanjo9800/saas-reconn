@@ -8,8 +8,11 @@ import (
 	"log"
 	"os"
 	"saasreconn/pkg/tools"
+	"sync"
 	"time"
 )
+
+var cacheRWLock sync.Mutex
 
 // Cache is our intermediate data storage class
 type Cache struct {
@@ -53,12 +56,14 @@ func NewCache() *Cache {
 
 // Initialise the database main folder
 func (cache *Cache) Initialise(path string) bool {
+	cacheRWLock.Lock()
+	defer cacheRWLock.Unlock()
 
 	if !cache.initialised {
 		if _, err := os.Stat(fmt.Sprintf("%s/%s/", cache.root, path)); os.IsNotExist(err) {
 			err := os.MkdirAll(fmt.Sprintf("%s/%s/", cache.root, path), 0755)
 			if err != nil {
-				log.Fatal(err)
+				log.Printf("An error occurred when initialising cache for %s: %s", path, err)
 				return false
 			}
 		}
@@ -134,10 +139,12 @@ func (cache *Cache) FetchZoneWalkForZone(zone string) (data map[string]CachedZon
 func (cache *Cache) fetchFromCache(path string, filename string) (data []byte, err error) {
 	success := cache.Initialise(path)
 	if !success {
-		log.Fatal("Could not initialise cache")
+		log.Printf("Could not initialise cache")
 		return nil, errors.New("Could not initialise cache")
 	}
 
+	cacheRWLock.Lock()
+	defer cacheRWLock.Unlock()
 	byteData, err := ioutil.ReadFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, tools.NameToPath(filename)))
 	if err != nil {
 		log.Printf("[%s/%s] Could not find existing cache data %s", path, filename, err)
@@ -199,6 +206,8 @@ func (cache *Cache) saveCachedData(path string, filename string, data []byte) er
 		return errors.New("Could not initialise cache")
 	}
 
+	cacheRWLock.Lock()
+	defer cacheRWLock.Unlock()
 	err := ioutil.WriteFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, tools.NameToPath(filename)), data, 0755)
 	if err != nil {
 		return errors.New("Failed to write back to cache")
@@ -226,6 +235,8 @@ func (cache *Cache) deleteFile(path string, filename string) bool {
 		return false
 	}
 
+	cacheRWLock.Lock()
+	defer cacheRWLock.Unlock()
 	// Check if cached data exists and delete only if there
 	if _, err := os.Stat(fmt.Sprintf("%s/%s/", cache.root, path)); os.IsExist(err) {
 		err := os.Remove(fmt.Sprintf("%s/%s/%s.json", cache.root, path, tools.NameToPath(filename)))

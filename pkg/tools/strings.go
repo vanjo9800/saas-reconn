@@ -1,20 +1,9 @@
 package tools
 
-import "strings"
-
-func UniqueStrings(arr []string) []string {
-	flags := make(map[string]bool)
-	for _, element := range arr {
-		flags[element] = true
-	}
-
-	var uniqueElements []string
-	for element := range flags {
-		uniqueElements = append(uniqueElements, element)
-	}
-
-	return uniqueElements
-}
+import (
+	"fmt"
+	"strings"
+)
 
 func CleanDomainName(name string) string {
 	name = strings.TrimPrefix(name, "*.")
@@ -36,4 +25,25 @@ func NameToPath(filename string) string {
 	escapedName = strings.ReplaceAll(escapedName, "/|\\| ", "_")
 
 	return escapedName
+}
+
+func UniqueStrings(arr []string) []string {
+	flags := make(map[string]bool)
+	for _, element := range arr {
+		flags[element] = true
+	}
+
+	var uniqueElements []string
+	for element := range flags {
+		uniqueElements = append(uniqueElements, element)
+	}
+
+	return uniqueElements
+}
+
+func URLFromSubdomainEntry(subdomain string) string {
+	if strings.HasPrefix(subdomain, "http") {
+		return subdomain
+	}
+	return fmt.Sprintf("http://%s/", subdomain)
 }

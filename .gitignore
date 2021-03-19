@@ -1,6 +1,7 @@
 /data/
 /tmp/
 /temp/
+/reports/
 configs/credentials.yaml
 /resources/wordlists
 .vscode/
