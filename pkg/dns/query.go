@@ -92,12 +92,12 @@ func AsyncQuery(nameserver string, queryName string, queryType uint16, verbosity
 
 func sendDNSRequest(nameserver string, queryName string, message *dns.Msg, client *dns.Client, verbosity int, responseChannel chan<- *dns.Msg) {
 	// Send request
-	response, rtt, err := client.Exchange(message, nameserver)
+	response, rtt, dnsError := client.Exchange(message, nameserver)
 
 	// Handle any errors
-	if err != nil {
+	if dnsError != nil {
 		// Check if it is a timeout
-		ioTimeoutMatch, err := regexp.MatchString(`i/o timeout`, err.Error())
+		ioTimeoutMatch, err := regexp.MatchString(`i/o timeout`, dnsError.Error())
 		if err == nil && ioTimeoutMatch {
 			// Loop if another dns request is handling the back-off, or announce this thread is handling it
 			for {
@@ -135,7 +135,7 @@ func sendDNSRequest(nameserver string, queryName string, message *dns.Msg, clien
 				ioTimeoutMatch, err = regexp.MatchString(`i/o timeout`, err.Error())
 			}
 		} else {
-			log.Printf("[%s] Unknown error type %s", queryName, err)
+			log.Printf("[%s] Unknown error type %s", queryName, dnsError)
 			return
 		}
 	}
