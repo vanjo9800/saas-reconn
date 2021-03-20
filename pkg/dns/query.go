@@ -68,7 +68,7 @@ func GetNameservers(domain string) (nameservers []string) {
 	return nameservers
 }
 
-func GetClientConn(nameserver string) (client *dns.Client, conn *dns.Conn) {
+func GetClientConn(nameserver string, verbosity int) (client *dns.Client, conn *dns.Conn) {
 	client = new(dns.Client)
 	client.Timeout = requestTimeout
 	client.Net = "udp"
@@ -76,8 +76,42 @@ func GetClientConn(nameserver string) (client *dns.Client, conn *dns.Conn) {
 
 	conn, err := client.Dial(nameserver)
 	if err != nil {
-		log.Printf("[%s] Could not connect to host: %s", nameserver, err)
-		return nil, nil
+		tooManyConnectionsMatch, tooManyConnectionsMatchErr := regexp.MatchString(`socket: too many open files`, err.Error())
+		if tooManyConnectionsMatchErr == nil && tooManyConnectionsMatch {
+			connectionsOverloadLock.Lock()
+			connectionsOverload = true
+			connectionsOverloadLock.Unlock()
+
+			defer func() {
+				connectionsOverloadLock.Lock()
+				connectionsOverload = false
+				connectionsOverloadLock.Unlock()
+			}()
+
+			// Exponential back-off
+			failedRequests := 0
+			for tooManyConnectionsMatchErr == nil && tooManyConnectionsMatch {
+				failedRequests++
+				if failedRequests > failedRequestsThreshold {
+					log.Printf("[%s] Too many failures to connect, aborting request", nameserver)
+					return nil, nil
+				}
+				if verbosity >= 5 {
+					log.Printf("[%s] Could not open DNS connection, backing off after %d retries", nameserver, failedRequests)
+				}
+				time.Sleep(time.Millisecond * time.Duration(math.Exp2(float64(failedRequests-1))))
+				conn, err = client.Dial(nameserver)
+				if err == nil {
+					log.Printf("[%s] Successfully connected after back-off", nameserver)
+					return client, conn
+				}
+				tooManyConnectionsMatch, tooManyConnectionsMatchErr = regexp.MatchString(`socket: too many open files`, err.Error())
+			}
+
+		} else {
+			log.Printf("[%s] Could not connect to host (unknown error): %s", nameserver, err)
+			return nil, nil
+		}
 	}
 
 	return client, conn
@@ -110,13 +144,12 @@ func AsyncQuery(nameserver string, queryName string, queryType uint16, verbosity
 		time.Sleep(connectionsWaitPoll)
 	}
 
-	client, conn := GetClientConn(nameserver)
+	client, conn := GetClientConn(nameserver, verbosity)
 	go sendDNSRequest(client, conn, message, queryName, verbosity, responseChannel)
 }
 
 func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query string, verbosity int, responseChannel chan<- *dns.Msg) {
 
-	defer conn.Close()
 	// Send request
 	response, rtt, dnsErr := client.ExchangeWithConn(message, conn)
 
@@ -124,7 +157,6 @@ func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query 
 	if dnsErr != nil {
 		// Check if it is a timeout
 		ioTimeoutMatch, timeoutMatchErr := regexp.MatchString(`i/o timeout`, dnsErr.Error())
-		tooManyConnectionsMatch, tooManyConnectionsMatchErr := regexp.MatchString(`socket: too many open files`, dnsErr.Error())
 		if timeoutMatchErr == nil && ioTimeoutMatch {
 			// Loop if another dns request is handling the back-off, or announce this thread is handling it
 			for {
@@ -161,36 +193,6 @@ func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query 
 					break
 				}
 				ioTimeoutMatch, timeoutMatchErr = regexp.MatchString(`i/o timeout`, dnsErr.Error())
-			}
-		} else if tooManyConnectionsMatchErr == nil && tooManyConnectionsMatch {
-			connectionsOverloadLock.Lock()
-			connectionsOverload = true
-			connectionsOverloadLock.Unlock()
-
-			defer func() {
-				connectionsOverloadLock.Lock()
-				connectionsOverload = false
-				connectionsOverloadLock.Unlock()
-			}()
-
-			// Exponential back-off
-			failedRequests := 0
-			for tooManyConnectionsMatchErr == nil && tooManyConnectionsMatch {
-				failedRequests++
-				if failedRequests > failedRequestsThreshold {
-					log.Printf("[%s] Too many failures to open socket, aborting request", query)
-					return
-				}
-				if verbosity >= 5 {
-					log.Printf("[%s] Could not open DNS connection, backing off after %d retries", query, failedRequests)
-				}
-				time.Sleep(rtt * time.Duration(math.Exp2(float64(failedRequests-1))))
-				response, rtt, dnsErr = client.ExchangeWithConn(message, conn)
-				if dnsErr == nil {
-					log.Printf("[%s] Successfully restored after back-off", query)
-					break
-				}
-				tooManyConnectionsMatch, tooManyConnectionsMatchErr = regexp.MatchString(`socket: too many open files`, dnsErr.Error())
 			}
 		} else {
 			log.Printf("[%s] Unknown error type: %s", query, dnsErr)
