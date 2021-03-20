@@ -13,9 +13,13 @@ import (
 var timeoutLogLock sync.Mutex
 var timeoutLog map[string]bool = make(map[string]bool)
 
+var connectionsOverloadLock sync.Mutex
+var connectionsOverload bool
+
 const failedRequestsThreshold = 10
 const requestTimeout = 4 * time.Second
 const timeoutWaitTime = 200 * time.Millisecond
+const connectionsWaitPoll = 200 * time.Millisecond
 
 func buildMessage() (message *dns.Msg) {
 
@@ -58,11 +62,25 @@ func GetNameservers(domain string) (nameservers []string) {
 	for _, rr := range response.Answer {
 		if rr.Header().Rrtype == dns.TypeNS {
 			nameservers = append(nameservers, rr.(*dns.NS).Ns)
-			// log.Printf("[%s] Found nameserver %s for %s", domain, rr.(*dns.NS).Ns, domain)
 		}
 	}
 
 	return nameservers
+}
+
+func GetClientConn(nameserver string) (client *dns.Client, conn *dns.Conn) {
+	client = new(dns.Client)
+	client.Timeout = requestTimeout
+	client.Net = "udp"
+	client.UDPSize = 12320
+
+	conn, err := client.Dial(nameserver)
+	if err != nil {
+		log.Printf("[%s] Could not connect to host: %s", nameserver, err)
+		return nil, nil
+	}
+
+	return client, conn
 }
 
 // SyncQuery is executing a synchronous DNS query waiting for a response, or returning a timeout
@@ -82,32 +100,41 @@ func AsyncQuery(nameserver string, queryName string, queryType uint16, verbosity
 
 	message.Question[0] = dns.Question{Name: dns.Fqdn(queryName), Qtype: queryType, Qclass: dns.ClassINET}
 
-	client := new(dns.Client)
-	client.Timeout = requestTimeout
-	client.Net = "udp"
-	client.UDPSize = 12320
+	for {
+		connectionsOverloadLock.Lock()
+		isOverloaded := connectionsOverload
+		connectionsOverloadLock.Unlock()
+		if !isOverloaded {
+			break
+		}
+		time.Sleep(connectionsWaitPoll)
+	}
 
-	go sendDNSRequest(nameserver, queryName, message, client, verbosity, responseChannel)
+	client, conn := GetClientConn(nameserver)
+	go sendDNSRequest(client, conn, message, queryName, verbosity, responseChannel)
 }
 
-func sendDNSRequest(nameserver string, queryName string, message *dns.Msg, client *dns.Client, verbosity int, responseChannel chan<- *dns.Msg) {
+func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query string, verbosity int, responseChannel chan<- *dns.Msg) {
+
+	defer conn.Close()
 	// Send request
-	response, rtt, dnsError := client.Exchange(message, nameserver)
+	response, rtt, dnsErr := client.ExchangeWithConn(message, conn)
 
 	// Handle any errors
-	if dnsError != nil {
+	if dnsErr != nil {
 		// Check if it is a timeout
-		ioTimeoutMatch, err := regexp.MatchString(`i/o timeout`, dnsError.Error())
-		if err == nil && ioTimeoutMatch {
+		ioTimeoutMatch, timeoutMatchErr := regexp.MatchString(`i/o timeout`, dnsErr.Error())
+		tooManyConnectionsMatch, tooManyConnectionsMatchErr := regexp.MatchString(`socket: too many open files`, dnsErr.Error())
+		if timeoutMatchErr == nil && ioTimeoutMatch {
 			// Loop if another dns request is handling the back-off, or announce this thread is handling it
 			for {
 				timeoutLogLock.Lock()
-				if val, ok := timeoutLog[nameserver]; val == false || !ok {
-					timeoutLog[nameserver] = true
+				if val, ok := timeoutLog[conn.RemoteAddr().String()]; val == false || !ok {
+					timeoutLog[conn.RemoteAddr().String()] = true
 					timeoutLogLock.Unlock()
 					defer func() {
 						timeoutLogLock.Lock()
-						timeoutLog[nameserver] = false
+						timeoutLog[conn.RemoteAddr().String()] = false
 						timeoutLogLock.Unlock()
 					}()
 					break
@@ -118,41 +145,72 @@ func sendDNSRequest(nameserver string, queryName string, message *dns.Msg, clien
 
 			// Exponential back-off
 			failedRequests := 0
-			for err == nil && ioTimeoutMatch {
+			for timeoutMatchErr == nil && ioTimeoutMatch {
 				failedRequests++
 				if failedRequests > failedRequestsThreshold {
-					log.Printf("[%s] Too many timeouts, aborting request", queryName)
+					log.Printf("[%s] Too many timeouts, aborting request", query)
 					return
 				}
 				if verbosity >= 5 {
-					log.Printf("[%s] DNS request timeout, backing off after %d retries", queryName, failedRequests)
+					log.Printf("[%s] DNS request timeout, backing off after %d retries", query, failedRequests)
 				}
 				time.Sleep(rtt * time.Duration(math.Exp2(float64(failedRequests-1))))
-				response, rtt, err = client.Exchange(message, nameserver)
-				if err == nil {
+				response, rtt, dnsErr = client.ExchangeWithConn(message, conn)
+				if dnsErr == nil {
+					log.Printf("[%s] Successfully restored after back-off", query)
 					break
 				}
-				ioTimeoutMatch, err = regexp.MatchString(`i/o timeout`, err.Error())
+				ioTimeoutMatch, timeoutMatchErr = regexp.MatchString(`i/o timeout`, dnsErr.Error())
+			}
+		} else if tooManyConnectionsMatchErr == nil && tooManyConnectionsMatch {
+			connectionsOverloadLock.Lock()
+			connectionsOverload = true
+			connectionsOverloadLock.Unlock()
+
+			defer func() {
+				connectionsOverloadLock.Lock()
+				connectionsOverload = false
+				connectionsOverloadLock.Unlock()
+			}()
+
+			// Exponential back-off
+			failedRequests := 0
+			for tooManyConnectionsMatchErr == nil && tooManyConnectionsMatch {
+				failedRequests++
+				if failedRequests > failedRequestsThreshold {
+					log.Printf("[%s] Too many failures to open socket, aborting request", query)
+					return
+				}
+				if verbosity >= 5 {
+					log.Printf("[%s] Could not open DNS connection, backing off after %d retries", query, failedRequests)
+				}
+				time.Sleep(rtt * time.Duration(math.Exp2(float64(failedRequests-1))))
+				response, rtt, dnsErr = client.ExchangeWithConn(message, conn)
+				if dnsErr == nil {
+					log.Printf("[%s] Successfully restored after back-off", query)
+					break
+				}
+				tooManyConnectionsMatch, tooManyConnectionsMatchErr = regexp.MatchString(`socket: too many open files`, dnsErr.Error())
 			}
 		} else {
-			log.Printf("[%s] Unknown error type %s", queryName, dnsError)
+			log.Printf("[%s] Unknown error type: %s", query, dnsErr)
 			return
 		}
 	}
 
 	if response.Truncated {
 		if client.Net == "udp" {
-			log.Printf("[%s] Truncated response, trying TCP", queryName)
+			log.Printf("[%s] Truncated response, trying TCP", query)
 			client.Net = "tcp"
-			sendDNSRequest(nameserver, queryName, message, client, verbosity, responseChannel)
+			sendDNSRequest(client, conn, message, query, verbosity, responseChannel)
 		} else {
-			log.Printf("[%s] Already using TCP, could not parse response", queryName)
+			log.Printf("[%s] Already using TCP, could not parse response", query)
 		}
 		return
 	}
 
 	if response.Id != message.Id {
-		log.Printf("[%s] ID mismatch", queryName)
+		log.Printf("[%s] ID mismatch", query)
 		return
 	}
 
