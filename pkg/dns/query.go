@@ -99,7 +99,7 @@ func GetClientConn(nameserver string, verbosity int) (client *dns.Client, conn *
 				if verbosity >= 5 {
 					log.Printf("[%s] Could not open DNS connection, backing off after %d retries", nameserver, failedRequests)
 				}
-				time.Sleep(time.Millisecond * time.Duration(math.Exp2(float64(failedRequests-1))))
+				time.Sleep(100 * time.Millisecond * time.Duration(math.Exp2(float64(failedRequests-1))))
 				conn, err = client.Dial(nameserver)
 				if err == nil {
 					log.Printf("[%s] Successfully connected after back-off", nameserver)
@@ -145,6 +145,12 @@ func AsyncQuery(nameserver string, queryName string, queryType uint16, verbosity
 	}
 
 	client, conn := GetClientConn(nameserver, verbosity)
+	if conn == nil {
+		if verbosity >= 4 {
+			log.Printf("[%s] Unable to establish connection to %s and send request", queryName, nameserver)
+		}
+		return
+	}
 	go sendDNSRequest(client, conn, message, queryName, verbosity, responseChannel)
 }
 
