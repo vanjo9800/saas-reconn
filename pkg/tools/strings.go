@@ -5,16 +5,8 @@ import (
 	"strings"
 )
 
-func CleanDomainName(name string) string {
-	name = strings.TrimPrefix(name, "*.")
-	name = strings.TrimSuffix(name, ".")
-
-	return name
-}
-
 func ExtractHash(dnsEntry string, zone string) string {
-	dnsEntry = strings.TrimSuffix(dnsEntry, ".")
-	dnsEntry = strings.TrimSuffix(dnsEntry, "."+zone)
+	dnsEntry = strings.Split(dnsEntry, ".")[0]
 
 	return strings.ToUpper(dnsEntry)
 }
@@ -25,6 +17,22 @@ func NameToPath(filename string) string {
 	escapedName = strings.ReplaceAll(escapedName, "/|\\| ", "_")
 
 	return escapedName
+}
+
+func NotIncluded(data []string, includedPool []string) (notIncluded []string) {
+	included := make(map[string]bool)
+
+	for _, name := range includedPool {
+		included[name] = true
+	}
+
+	for _, name := range data {
+		if _, ok := included[name]; !ok {
+			notIncluded = append(notIncluded, name)
+		}
+	}
+
+	return notIncluded
 }
 
 func UniqueStrings(arr []string) []string {

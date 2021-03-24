@@ -47,7 +47,7 @@ func main() {
 	rateLimit := flag.Int("rate-limit", 20, "limit the number of DNS requests per second to avoid blocking (0 for no limit)")
 	walkmode := flag.Int("walkmode", 1, " what mode to use for zone-walking (0 for just DNSSEC test, 1 for both mapping and reversing, 2 for just mapping and storing cache, and 3 for just reversing based on cache)")
 	noCache := flag.Bool("no-cache", false, "a bool whether to use pre-existing")
-	hashcat := flag.Bool("hashcat", false, "use hashcat for reversing NSEC3 hashes")
+	hashcat := flag.Bool("hashcat", true, "use hashcat for reversing NSEC3 hashes")
 	verbose := flag.Int("verbose", 3, "verbosity factor")
 	flag.Parse()
 

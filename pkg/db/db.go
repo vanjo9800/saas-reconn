@@ -65,13 +65,13 @@ func (db *Database) GetAll() (providers []string) {
 func (db *Database) fetchDataForProvider(providerName string) (providerData *ProviderData, err error) {
 	success := db.Initialise()
 	if !success {
-		log.Fatal("Could not initialise database")
+		log.Printf("Could not initialise database")
 		return nil, errors.New("Could not initialise database")
 	}
 
 	data, err := ioutil.ReadFile(db.root + tools.NameToPath(providerName) + ".json")
 	if err != nil {
-		log.Printf("[%s] Could not find existing provider data", providerName)
+		// log.Printf("[%s] Could not find existing provider data", providerName)
 		return EmptyProviderData(providerName), nil
 	}
 
@@ -99,13 +99,13 @@ func (db *Database) saveProviderData(data *ProviderData) error {
 
 	dataJSON, err := data.ToJSON()
 	if err != nil {
-		log.Fatal("Could not convert provider data to JSON for provider " + data.ProviderName)
+		log.Fatal("Could not convert provider data to JSON for provider " + data.Provider)
 		return err
 	}
 
-	err = ioutil.WriteFile(db.root+tools.NameToPath(data.ProviderName)+".json", dataJSON, 0755)
+	err = ioutil.WriteFile(db.root+tools.NameToPath(data.Provider)+".json", dataJSON, 0755)
 	if err != nil {
-		log.Fatal("Failed to write provider data file for provider " + data.ProviderName)
+		log.Fatal("Failed to write provider data file for provider " + data.Provider)
 		return err
 	}
 

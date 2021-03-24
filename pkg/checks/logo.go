@@ -46,7 +46,7 @@ func detectLogos(file string) (logos []string, err error) {
 
 func DetectLogosInUrl(url string) (logos []string) {
 
-	screenshotFile := ScreenshotFromURL(url)
+	screenshotFile := ScreenshotFromURLToFile(url)
 	defer os.Remove(screenshotFile)
 
 	logos, err := detectLogos(screenshotFile)

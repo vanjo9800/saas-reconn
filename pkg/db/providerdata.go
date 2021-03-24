@@ -12,9 +12,9 @@ import (
 
 // ProviderData is the major class that stores data from service providers
 type ProviderData struct {
-	ProviderName string
-	Collected    time.Time
-	Subdomains   map[string][]Subdomain
+	Provider   string
+	Collected  time.Time
+	Subdomains map[string][]Subdomain
 }
 
 // Subdomain is a class of stored subdomain entry with a name and a confidence score
@@ -22,25 +22,14 @@ type Subdomain struct {
 	Name         string
 	Confidence   int
 	DiscoveredBy []string
+	Screenshot   string
 }
-
-// SubdomainList is an instance of list of Subdomains with defined comparison functions
-type SubdomainList []Subdomain
-
-func (l SubdomainList) Len() int { return len(l) }
-func (l SubdomainList) Less(i, j int) bool {
-	if l[i].Confidence == l[j].Confidence {
-		return l[i].Name < l[j].Name
-	}
-	return l[i].Confidence > l[j].Confidence
-}
-func (l SubdomainList) Swap(i, j int) { l[i], l[j] = l[j], l[i] }
 
 // MapStringNamesToSubdomain applies a certain confidence score to a string array of subdomains
 func MapStringNamesToSubdomain(domainNames []string, confidenceScore int, source string) (domains []Subdomain) {
 	for _, domainName := range domainNames {
 		domains = append(domains, Subdomain{
-			Name:         domainName,
+			Name:         tools.CleanDomainName(domainName),
 			Confidence:   confidenceScore,
 			DiscoveredBy: []string{source},
 		})
@@ -49,12 +38,24 @@ func MapStringNamesToSubdomain(domainNames []string, confidenceScore int, source
 	return domains
 }
 
+func NamesFromProviderData(providerData []ProviderData) (names []string) {
+	for _, providerSubdomains := range providerData {
+		for _, subdomains := range providerSubdomains.Subdomains {
+			for _, subdomain := range subdomains {
+				names = append(names, subdomain.Name)
+			}
+		}
+	}
+
+	return names
+}
+
 // EmptyProviderData returns an empty data object, usually when we have no data stored for the provider
 func EmptyProviderData(providerName string) *ProviderData {
 	return &ProviderData{
-		ProviderName: providerName,
-		Collected:    time.Now(),
-		Subdomains:   make(map[string][]Subdomain),
+		Provider:   providerName,
+		Collected:  time.Now(),
+		Subdomains: make(map[string][]Subdomain),
 	}
 }
 
@@ -63,7 +64,7 @@ func ProviderDataFromJSON(data []byte) (providerData *ProviderData, err error) {
 	providerData = new(ProviderData)
 	err = json.Unmarshal(data, &providerData)
 	if err != nil {
-		log.Printf("[%s] Invalid provider data: %s", providerData.ProviderName, err)
+		log.Printf("[%s] Invalid provider data: %s", providerData.Provider, err)
 		return EmptyProviderData(""), err
 	}
 
@@ -96,9 +97,9 @@ func (data *ProviderData) query(domainPattern string) *ProviderData {
 	}
 
 	return &ProviderData{
-		ProviderName: data.ProviderName,
-		Collected:    time.Now(),
-		Subdomains:   domainsMap,
+		Provider:   data.Provider,
+		Collected:  time.Now(),
+		Subdomains: domainsMap,
 	}
 }
 
@@ -129,8 +130,18 @@ func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains [
 		})
 	}
 
-	sort.Sort(SubdomainList(data.Subdomains[rootDomain]))
-	sort.Sort(SubdomainList(addedDomains))
+	sort.SliceStable(data.Subdomains[rootDomain], func(i, j int) bool {
+		if data.Subdomains[rootDomain][i].Confidence == data.Subdomains[rootDomain][j].Confidence {
+			return data.Subdomains[rootDomain][i].Name < data.Subdomains[rootDomain][j].Name
+		}
+		return data.Subdomains[rootDomain][i].Confidence > data.Subdomains[rootDomain][j].Confidence
+	})
+	sort.SliceStable(addedDomains, func(i, j int) bool {
+		if addedDomains[i].Confidence == addedDomains[j].Confidence {
+			return addedDomains[i].Name < addedDomains[j].Name
+		}
+		return addedDomains[i].Confidence > addedDomains[j].Confidence
+	})
 
 	return &DataDiff{
 		added: addedDomains,
@@ -160,7 +171,7 @@ func (data *ProviderData) Dump() {
 			continue
 		}
 		if printedIntro == 0 {
-			log.Printf("ProviderName: %s\n", data.ProviderName)
+			log.Printf("ProviderName: %s\n", data.Provider)
 			log.Printf("Collected: %s\n", data.Collected.String())
 			printedIntro = 1
 		}

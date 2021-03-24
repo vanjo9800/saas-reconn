@@ -51,6 +51,11 @@ func CoveredDistance(hash1 string, hash2 string) *big.Int {
 	number1 := nsec3HashToNumber(hash1)
 	number2 := nsec3HashToNumber(hash2)
 
+	if number1 == nil || number2 == nil {
+		log.Printf("There is something wrong with NSEC3 record: %s -> %s, returning 0", hash1, hash2)
+		return big.NewInt(0)
+	}
+
 	if number1.Cmp(number2) == -1 {
 		// number1 < number 2
 		// hashes are in order

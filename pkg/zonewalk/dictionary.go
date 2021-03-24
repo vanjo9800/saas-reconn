@@ -51,6 +51,7 @@ func addProviderData(dictionary chan<- string) {
 				cleanName := cleanProviderName(subdomain.Name, base)
 				nameParts := strings.Split(cleanName, ".")
 				nameParts = append(nameParts, cleanName)
+				nameParts = tools.UniqueStrings(nameParts)
 				for _, namePart := range nameParts {
 					dictionary <- namePart
 				}
@@ -88,6 +89,7 @@ func exportProviderData(path string, filename string) {
 				cleanName := cleanProviderName(subdomain.Name, base)
 				namesToExplore := strings.Split(cleanName, ".")
 				namesToExplore = append(namesToExplore, cleanName)
+				namesToExplore = tools.UniqueStrings(namesToExplore)
 				for _, name := range namesToExplore {
 					_, err := providerDictionary.WriteString(name + "\n")
 					if err != nil {

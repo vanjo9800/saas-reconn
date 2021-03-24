@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"strconv"
@@ -16,7 +17,7 @@ const fetchRate = 4.0 * time.Second
 
 var failedQueries = 0
 
-func browserFetch(ctx context.Context, domain string, position string, last string, from int) (count string, domains string) {
+func browserFetch(ctx context.Context, domain string, position string, last string, from int, verbosity int) (count string, domains string) {
 
 	url := "https://searchdns.netcraft.com/?restriction=site+" + position + "+with&"
 	if from != 0 {
@@ -24,11 +25,15 @@ func browserFetch(ctx context.Context, domain string, position string, last stri
 	}
 	url += "host=" + domain + "&position=limited"
 	for {
-		log.Printf("[%s] Querying url %s", domain, url)
+		if verbosity >= 4 {
+			log.Printf("[SearchDNS] Querying url `%s`", url)
+		}
 
 		// Add fetchTimeout to context
-		ctx, _ = context.WithTimeout(ctx, fetchTimeout)
-		ctx, _ = chromedp.NewContext(ctx)
+		ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+		defer cancel()
+		ctx, cancel = chromedp.NewContext(ctx)
+		defer cancel()
 
 		err := chromedp.Run(ctx,
 			chromedp.Navigate(url),
@@ -39,9 +44,10 @@ func browserFetch(ctx context.Context, domain string, position string, last stri
 			failedQueries = 0
 			break
 		}
-		log.Printf("[%s] Gave error %s\n failed attempts so far %d", domain, err, failedQueries)
 		failedQueries = int(math.Min(10, float64(failedQueries)+1))
-		log.Printf("Sleeping for %s", time.Duration(math.Exp2(float64(failedQueries-1)))*time.Second)
+		if verbosity >= 3 {
+			log.Printf("[SearchDNS] Request for `%s` gave error %s, backing off\n failed attempts so far %d", url, err, failedQueries)
+		}
 		time.Sleep(time.Duration(math.Exp2(float64(failedQueries-1))) * time.Second)
 	}
 
@@ -49,11 +55,20 @@ func browserFetch(ctx context.Context, domain string, position string, last stri
 
 }
 
-func parseCount(count string) (pageNumber int64, err error) {
+func parseCount(count string) int64 {
 	records := strings.Fields(count)
-	pageString := strings.TrimSuffix(records[len(records)-1], ")")
+	resultsCountString := records[0]
+	if records[0] == "First" {
+		// First 500 results
+		resultsCountString = records[1]
+	}
+	resultsCount, err := strconv.ParseInt(resultsCountString, 10, 0)
+	if err != nil {
+		log.Printf("Could not parse page number from %s: %s", count, err)
+		return 0
+	}
 
-	return strconv.ParseInt(pageString, 10, 0)
+	return (resultsCount / 20) + 1
 }
 
 func parseDomains(domains string) (subdomains []string, last string) {
@@ -68,9 +83,11 @@ func parseDomains(domains string) (subdomains []string, last string) {
 	return subdomains, last
 }
 
-func SearchDNSQuery(domain string, position string) (subdomains []string) {
+func SearchDNSQuery(domain string, position string, verbosity int) (subdomains []string) {
 
-	log.Printf("[%s] Querying SearchDNS with domain at position `%s`", domain, position)
+	if verbosity >= 2 {
+		log.Printf("[SearchDNS] Querying SearchDNS with domain `%s` at position `%s`", domain, position)
+	}
 	start := time.Now()
 
 	// Create Chrome instance
@@ -83,32 +100,33 @@ func SearchDNSQuery(domain string, position string) (subdomains []string) {
 		return subdomains
 	}
 
-	count, domains := browserFetch(chromeCtx, domain, position, "", 0)
+	count, domains := browserFetch(chromeCtx, domain, position, "", 0, verbosity)
 
-	pageCount, err := parseCount(count)
-	if err != nil {
-		log.Printf("[%s] Could not parse page number", domain)
-		return subdomains
-	}
+	pageCount := parseCount(count)
 	subdomains, last := parseDomains(domains)
 
-	log.Printf("[%s] Page count: %d", domain, pageCount)
+	if verbosity >= 3 {
+		log.Printf("[SearchDNS] Page count: %d", pageCount)
+	}
 	for i := 1; int64(i) < pageCount; i++ {
-		log.Printf("[%s] Processing page %d\r", domain, i)
-		_, domains = browserFetch(chromeCtx, domain, position, last, len(subdomains)+1)
+		if verbosity >= 4 {
+			fmt.Printf("\r[SearchDNS] Processing page %d", i)
+		}
+		_, domains = browserFetch(chromeCtx, domain, position, last, len(subdomains)+1, verbosity)
 		time.Sleep(fetchRate)
 
 		var newSubdomains []string
 		newSubdomains, last = parseDomains(domains)
 
-		// if i%5 == 0 {
-		// 	log.Printf("[%s] Sleeping...", domain)
-		// 	time.Sleep(3 * time.Second)
-		// }
 		subdomains = append(subdomains, newSubdomains...)
+	}
+	if verbosity >= 4 {
+		fmt.Println()
 	}
 
 	elapsed := time.Since(start)
-	log.Printf("[%s] Found %d subdomains in %s", domain, len(subdomains), elapsed)
+	if verbosity >= 2 {
+		log.Printf("[SearchDNS] Found %d subdomains in %s", len(subdomains), elapsed)
+	}
 	return subdomains
 }

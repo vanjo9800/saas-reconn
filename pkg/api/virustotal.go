@@ -34,9 +34,11 @@ type VTResponse struct {
 
 const initialLink = "https://www.virustotal.com/api/v3/domains/%s/subdomains?limit=40"
 
-func VirusTotalQuery(domain string, apikey string) (subdomains []string) {
+func VirusTotalQuery(domain string, apikey string, verbosity int) (subdomains []string) {
 
-	log.Printf("[%s] Querying VirusTotal", domain)
+	if verbosity >= 2 {
+		log.Printf("[VirusTotal] Querying for `%s`", domain)
+	}
 	start := time.Now()
 
 	if len(apikey) == 0 {
@@ -48,7 +50,9 @@ func VirusTotalQuery(domain string, apikey string) (subdomains []string) {
 	queryLink := fmt.Sprintf(initialLink, domain)
 
 	for {
-		log.Printf("[%s] About to query %s", domain, queryLink)
+		if verbosity >= 4 {
+			log.Printf("[VirusTotal] About to query `%s`", queryLink)
+		}
 		req, err := http.NewRequest("GET", queryLink, nil)
 		req.Header.Add("x-apikey", apikey)
 		resp, err := client.Do(req)
@@ -78,6 +82,8 @@ func VirusTotalQuery(domain string, apikey string) (subdomains []string) {
 	}
 
 	elapsed := time.Since(start)
-	log.Printf("[%s] Found %d subdomains in %s", domain, len(subdomains), elapsed)
+	if verbosity >= 2 {
+		log.Printf("[VirusTotal] Found %d subdomains for `%s` in %s", len(subdomains), domain, elapsed)
+	}
 	return subdomains
 }

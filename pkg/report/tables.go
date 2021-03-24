@@ -1,17 +1,5 @@
 package report
 
-type SubdomainRow struct {
-	Subdomain  string
-	Confidence int
-	FoundIn    []string
-	Screenshot string
-}
-
-type ExposedSubdomains struct {
-	Provider   string
-	Subdomains []SubdomainRow
-}
-
 // func DrawTable(report pdf.Maroto, header []string, contents []SubdomainRow, prop ...props.TableList) {
 // 	if len(header) == 0 || len(contents) == 0 {
 // 		return

@@ -4,5 +4,6 @@
 /reports/
 configs/credentials.yaml
 /resources/wordlists
+/resources/companies
 .vscode/
 .DS_Store

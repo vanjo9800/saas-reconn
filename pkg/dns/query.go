@@ -52,7 +52,7 @@ func buildMessage() (message *dns.Msg) {
 
 // GetNameservers returns an list witht the nameservers for a domain name
 func GetNameservers(domain string) (nameservers []string) {
-	response := SyncQuery("8.8.8.8:53", domain, dns.TypeNS, 2)
+	response := SyncQuery("8.8.8.8:53", domain, domain, dns.TypeNS, 2)
 
 	if response == nil {
 		log.Printf("[%s] No nameservers response for %s", domain, domain)
@@ -68,10 +68,10 @@ func GetNameservers(domain string) (nameservers []string) {
 	return nameservers
 }
 
-func GetClientConn(nameserver string, verbosity int) (client *dns.Client, conn *dns.Conn) {
+func GetClientConn(nameserver string, connectionType string, verbosity int) (client *dns.Client, conn *dns.Conn) {
 	client = new(dns.Client)
 	client.Timeout = requestTimeout
-	client.Net = "udp"
+	client.Net = connectionType
 	client.UDPSize = 12320
 
 	conn, err := client.Dial(nameserver)
@@ -118,17 +118,17 @@ func GetClientConn(nameserver string, verbosity int) (client *dns.Client, conn *
 }
 
 // SyncQuery is executing a synchronous DNS query waiting for a response, or returning a timeout
-func SyncQuery(nameserver string, queryName string, queryType uint16, verbosity int) (response *dns.Msg) {
+func SyncQuery(nameserver string, zone string, queryName string, queryType uint16, verbosity int) (response *dns.Msg) {
 	responseChan := make(chan *dns.Msg)
 	if verbosity >= 5 {
 		log.Printf("[%s] Sending DNSSEC query for %s", nameserver, queryName)
 	}
-	AsyncQuery(nameserver, queryName, queryType, verbosity, responseChan)
+	AsyncQuery(nameserver, zone, queryName, queryType, verbosity, responseChan)
 	return <-responseChan
 }
 
 // AsyncQuery is executing an asynchronous DNS query writing the response to a channel passed as a parameter
-func AsyncQuery(nameserver string, queryName string, queryType uint16, verbosity int, responseChannel chan<- *dns.Msg) {
+func AsyncQuery(nameserver string, zone string, queryName string, queryType uint16, verbosity int, responseChannel chan<- *dns.Msg) {
 
 	message := buildMessage()
 
@@ -144,17 +144,17 @@ func AsyncQuery(nameserver string, queryName string, queryType uint16, verbosity
 		time.Sleep(connectionsWaitPoll)
 	}
 
-	client, conn := GetClientConn(nameserver, verbosity)
+	client, conn := GetClientConn(nameserver, "udp", verbosity)
 	if conn == nil {
 		if verbosity >= 4 {
 			log.Printf("[%s] Unable to establish connection to %s and send request", queryName, nameserver)
 		}
 		return
 	}
-	go sendDNSRequest(client, conn, message, queryName, verbosity, responseChannel)
+	go sendDNSRequest(client, conn, message, queryName, zone, verbosity, responseChannel)
 }
 
-func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query string, verbosity int, responseChannel chan<- *dns.Msg) {
+func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query string, zone string, verbosity int, responseChannel chan<- *dns.Msg) {
 
 	// Send request
 	response, rtt, dnsErr := client.ExchangeWithConn(message, conn)
@@ -167,14 +167,15 @@ func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query 
 			// Loop if another dns request is handling the back-off, or announce this thread is handling it
 			for {
 				timeoutLogLock.Lock()
-				if val, ok := timeoutLog[conn.RemoteAddr().String()]; val == false || !ok {
-					timeoutLog[conn.RemoteAddr().String()] = true
+				nameserverAndZone := conn.RemoteAddr().String() + ":" + zone
+				if val, ok := timeoutLog[nameserverAndZone]; val == false || !ok {
+					timeoutLog[nameserverAndZone] = true
 					timeoutLogLock.Unlock()
-					defer func() {
+					defer func(nameserverAndZone string) {
 						timeoutLogLock.Lock()
-						timeoutLog[conn.RemoteAddr().String()] = false
+						timeoutLog[nameserverAndZone] = false
 						timeoutLogLock.Unlock()
-					}()
+					}(nameserverAndZone)
 					break
 				}
 				timeoutLogLock.Unlock()
@@ -209,10 +210,16 @@ func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query 
 	if response.Truncated {
 		if client.Net == "udp" {
 			log.Printf("[%s] Truncated response, trying TCP", query)
-			client.Net = "tcp"
-			sendDNSRequest(client, conn, message, query, verbosity, responseChannel)
+			tcpClient, tcpConn := GetClientConn(conn.RemoteAddr().String(), "tcp", verbosity)
+			if tcpConn == nil {
+				if verbosity >= 4 {
+					log.Printf("[%s] Unable to establish TCP connection to %s and re-send request", query, conn.RemoteAddr().String())
+				}
+				return
+			}
+			sendDNSRequest(tcpClient, tcpConn, message, query, zone, verbosity, responseChannel)
 		} else {
-			log.Printf("[%s] Already using TCP, could not parse response", query)
+			log.Printf("[%s] Already using TCP, could not parse truncated response", query)
 		}
 		return
 	}

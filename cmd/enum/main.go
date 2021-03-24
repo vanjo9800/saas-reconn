@@ -15,9 +15,10 @@ const passiveConfidence = 60
 func main() {
 
 	// Read flags
-	endpointsConfig := flag.String("endpoints-config", "configs/saas_endpoints.yaml", "a SaaS providers endpoints file")
-	dataProviders := flag.String("dataproviders", "Crt.sh", "a comma separated list of passive data providers to use (supported providers: Crt.sh, VirusTotal, SearchDNS)")
 	apikey := flag.String("vtotal-key", "", "VirusTotal API key")
+	dataProviders := flag.String("dataproviders", "Crt.sh", "a comma separated list of passive data providers to use (supported providers: Crt.sh, VirusTotal, SearchDNS)")
+	endpointsConfig := flag.String("endpoints-config", "configs/saas_endpoints.yaml", "a SaaS providers endpoints file")
+	verbose := flag.Int("verbose", 2, "verbosity factor")
 	flag.Parse()
 
 	// Database setup
@@ -34,17 +35,17 @@ func main() {
 			var found []string
 
 			if strings.Contains(*dataProviders, "Crt.sh") {
-				found = append(found, api.CrtShQuery(domain)...)
+				found = append(found, api.CrtShQuery(domain, *verbose)...)
 				diff, _ := resultsDatabase.UpdateProvider(name, domain, db.MapStringNamesToSubdomain(found, passiveConfidence, "Crt.sh"))
 				diff.Dump()
 			}
 			if strings.Contains(*dataProviders, "SearchDNS") {
-				found = append(found, api.SearchDNSQuery(domain, "ends")...)
+				found = append(found, api.SearchDNSQuery(domain, "ends", *verbose)...)
 				diff, _ := resultsDatabase.UpdateProvider(name, domain, db.MapStringNamesToSubdomain(found, passiveConfidence, "SearchDNS"))
 				diff.Dump()
 			}
 			if strings.Contains(*dataProviders, "VirusTotal") {
-				found = append(found, api.VirusTotalQuery(domain, *apikey)...)
+				found = append(found, api.VirusTotalQuery(domain, *apikey, *verbose)...)
 				diff, _ := resultsDatabase.UpdateProvider(name, domain, db.MapStringNamesToSubdomain(found, passiveConfidence, "VirusTotal"))
 				diff.Dump()
 			}

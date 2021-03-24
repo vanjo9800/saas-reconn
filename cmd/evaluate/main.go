@@ -62,6 +62,7 @@ func main() {
 
 	// Read flags
 	wordlist := flag.String("wordlist", "", "path to wordlist to evaluate")
+	hashcat := flag.Bool("hashcat", true, "use hashcat for hash reversing")
 	output := flag.String("out", "wordlist-evaluation.csv", "path to CSV output")
 	verbose := flag.Int("verbose", 1, "verbosity factor")
 	flag.Parse()
@@ -96,7 +97,7 @@ func main() {
 				MappingCache: true,
 				GuessesCache: false,
 				UpdateCache:  false,
-				Hashcat:      false, //*hashcat,
+				Hashcat:      *hashcat,
 				Mode:         3,
 				Verbose:      *verbose,
 				Wordlist:     wordlist,
@@ -107,7 +108,7 @@ func main() {
 				iterations, _ := strconv.Atoi(strings.Split(params, ":")[1])
 				guessed := zonewalk.Nsec3ZoneReversing(config, salt, iterations)
 				wordlistData = append(wordlistData, fmt.Sprintf("%d", len(guessed)))
-				fmt.Printf("\r%d names guessed for zone %s", len(guessed), zone)
+				fmt.Printf("\r%d names guessed for zone %s\n", len(guessed), zone)
 			}
 
 		}

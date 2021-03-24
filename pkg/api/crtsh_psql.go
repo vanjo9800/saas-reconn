@@ -9,34 +9,37 @@ import (
 	"github.com/jackc/pgconn"
 )
 
-func CrtShQuery(domain string) (subdomains []string) {
+const connectionRetries int = 3
 
-	log.Println("Querying Crt.sh for " + domain)
+func CrtShQuery(domain string, verbosity int) (subdomains []string) {
+
+	if verbosity >= 2 {
+		log.Printf("[Crt.sh] Querying Crt.sh for %s", domain)
+	}
 	start := time.Now()
 
+	// TODO - revise
 	time.Sleep(10 * time.Second)
 
 	cfg, err := pgconn.ParseConfig("user=guest host=crt.sh port=5432 database=certwatch")
 	if err != nil {
-		log.Fatalf("[%s] Could not parse Postgres connect config: %s", domain, err)
+		log.Printf("[Crt.sh] Could not parse Postgres connect config: %s", err)
+		return subdomains
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	pgConn, err := pgconn.ConnectConfig(ctx, cfg)
-	if err != nil {
-		log.Printf("[%s] pgconn failed to connect: %s", domain, err)
-		for i := 1; i < 3; i++ {
-			log.Println("Retrying...")
-			pgConn, err = pgconn.ConnectConfig(ctx, cfg)
-			if err == nil {
-				break
-			}
-			log.Printf("[%s] pgconn failed to connect: %s", domain, err)
+	failedConnects := 0
+	for err != nil {
+		if verbosity >= 4 {
+			log.Printf("[Crt.sh] pgconn failed to connect: %s", err)
 		}
-		if err != nil {
+		failedConnects++
+		if failedConnects == connectionRetries {
 			return subdomains
 		}
+		pgConn, err = pgconn.ConnectConfig(ctx, cfg)
 	}
 	defer pgConn.Close(context.Background())
 
@@ -44,16 +47,21 @@ func CrtShQuery(domain string) (subdomains []string) {
 	for result.NextRow() {
 		cleanName := tools.CleanDomainName(string(result.Values()[0]))
 		subdomains = append(subdomains, cleanName)
+		subdomains = tools.UniqueStrings(subdomains)
 		if len(subdomains) > 100000 {
-			log.Printf("[%s] Read more than 100000 domains, skipping for now...", domain)
+			if verbosity >= 3 {
+				log.Printf("[Crt.sh] Read more than 100000 domains for %s, skipping for now...", domain)
+			}
 			break
 		}
 	}
 	_, err = result.Close()
 	if err != nil {
-		log.Printf("[%s] failed reading result: %s", domain, err)
+		log.Printf("[Crt.sh] failed reading query result: %s", err)
 	}
 	elapsed := time.Since(start)
-	log.Printf("[%s] Found %d subdomains in %s", domain, len(subdomains), elapsed)
+	if verbosity >= 2 {
+		log.Printf("[Crt.sh] Found %d subdomains for %s in %s", len(subdomains), domain, elapsed)
+	}
 	return subdomains
 }

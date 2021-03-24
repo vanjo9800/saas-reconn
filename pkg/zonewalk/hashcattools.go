@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strings"
 )
 
 const hashcatLocation = "data/hashcat/"
@@ -30,7 +31,7 @@ func ExportToHashcat(hashes []string, zone string, salt string, iterations int) 
 	defer hashcatFile.Close()
 
 	for _, hash := range hashes {
-		_, err = hashcatFile.WriteString(fmt.Sprintf("%s:.%s:%s:%d\n", hash, zone, salt, iterations))
+		_, err = hashcatFile.WriteString(fmt.Sprintf("%s:.%s:%s:%d\n", strings.ToLower(hash), zone, salt, iterations))
 		if err != nil {
 			log.Printf("[%s:%s:%d] Error writing to hashcat file %s", zone, salt, iterations, err)
 			return ""
@@ -50,7 +51,6 @@ func runShellCommand(command string, arguments []string) (string, string) {
 		log.Printf("Unexpected error initializing context `%s`: %s", fullCommand, err)
 		return "", ""
 	}
-	log.Printf("Running command `%s`", command)
 	if err := cmd.Start(); err != nil {
 		log.Printf("Unexpected error starting command `%s`: %s", fullCommand, err)
 		return "", ""
@@ -62,10 +62,8 @@ func runShellCommand(command string, arguments []string) (string, string) {
 	stdoutBuf.ReadFrom(stdoutReader)
 	stderrBuf.ReadFrom(stderrReader)
 
-	log.Printf("Out: %s, Err: %s", stdoutBuf.String(), stderrBuf.String())
-
-	if err := cmd.Wait(); err != nil {
-		log.Printf("Unexpected error executing command `%s`: %s", fullCommand, err)
+	if err := cmd.Wait(); err != nil && stderrBuf.String() != "" {
+		log.Printf("Unexpected error executing command `%s`: %s, Err: %s", fullCommand, err, stderrBuf.String())
 		return "", ""
 	}
 
@@ -73,9 +71,9 @@ func runShellCommand(command string, arguments []string) (string, string) {
 }
 
 // RunHashcat runs hashcat with our internal dictionaries against an input file with NSEC3 hashes
-func RunHashcat(inputFile string) map[string]string {
+func RunHashcat(config Config, inputFile string) map[string]string {
 	// Check if hashcat is installed
-	versionOut, versionErr := runShellCommand("hashcat", []string{"--version"})
+	versionOut, versionErr := runShellCommand("hashcat_m1", []string{"--version"})
 	if versionOut == "" {
 		log.Printf("Hashcat check failed with status %s", versionErr)
 		return nil
@@ -87,18 +85,41 @@ func RunHashcat(inputFile string) map[string]string {
 	}
 
 	// Build dictionary lists
-	wordlists := WordlistBank()
-	providersWordlist := "provider_dictionary.txt"
-	wordlists = append(wordlists, hashcatLocation+providersWordlist)
-	exportProviderData(hashcatLocation, providersWordlist)
-
-	for _, wordlist := range wordlists {
-		crackingOut, crackingErr := runShellCommand("hashcat", []string{"-m 8300", "-a 0", inputFile, wordlist})
-		log.Printf("Stdout: %s", crackingOut)
-		log.Printf("Stderr: %s", crackingErr)
+	var wordlists []string
+	if config.Wordlist != "" && config.Wordlist != "provider-database" {
+		wordlists = append(wordlists, config.Wordlist)
+	} else {
+		wordlists = WordlistBank()
+	}
+	if config.Wordlist == "provider-database" || config.Wordlist == "" {
+		providersWordlist := "provider_dictionary.txt"
+		wordlists = append(wordlists, hashcatLocation+providersWordlist)
+		exportProviderData(hashcatLocation, providersWordlist)
 	}
 
-	return nil
+	for _, wordlist := range wordlists {
+		if config.Verbose >= 3 {
+			fmt.Printf("\rPassing wordlist %s...\r", wordlist)
+		}
+		runShellCommand("hashcat_m1", []string{"-O", "-m8300", "-a0", fmt.Sprintf("--potfile-path=data/hashcat/%s.pot", strings.TrimPrefix(inputFile, hashcatLocation)), inputFile, wordlist})
+	}
+	if config.Verbose >= 3 {
+		fmt.Println()
+	}
+
+	hashcatPot, _ := runShellCommand("hashcat_m1", []string{"-O", "-m8300", "-a0", fmt.Sprintf("--potfile-path=data/hashcat/%s.pot", strings.TrimPrefix(inputFile, hashcatLocation)), inputFile, "--show"})
+
+	guessed := make(map[string]string)
+	for _, guess := range strings.Split(hashcatPot, "\n") {
+		if guess == "" {
+			continue
+		}
+		guessParts := strings.Split(guess, ":")
+		hash := strings.ToUpper(guessParts[0])
+		plaintext := guessParts[4]
+		guessed[hash] = plaintext
+	}
+	return guessed
 }
 
 func CleanHashcatDir() {

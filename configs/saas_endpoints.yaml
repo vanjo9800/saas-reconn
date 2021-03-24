@@ -1,18 +1,22 @@
 'Salesforce.com':
   subdomain:
     - 'salesforce.com'
-'Microsoft Outlook':
+'Microsoft Office 365':
+  subdomain:
+    - 'sharepoint.com'
   urls:
     - 'outlook.office.com/owa/'
     - 'outlook.office365.com/owa/'
 'Box.com':
   subdomain:
     - 'box.com'
+    - 'account.box.com'
   checks:
     - 'logo'
 'Slack':
   subdomain:
     - 'slack.com'
+    - 'enterprise.slack.com'
   checks:
     - 'logo'
 'Zendesk':
@@ -41,6 +45,7 @@
 'Workday':
   subdomain:
     - 'myworkdayjobs.com'
+#    - 'wd1.myworkdayjobs.com'
 'Coupa':
   subdomain:
     - 'coupa.com'
@@ -68,3 +73,44 @@
     - 'onelogin.com'
   checks:
     - 'logo'
+'SabaCloud':
+  subdomain:
+    - 'sabacloud.com'
+'Qualtrics':
+  subdomain:
+    - 'qualtrics.com'
+    - 'az1.qualtrics.com'
+'Citrix ShareFile':
+  subdomain:
+    - 'sharefile.com'
+'MapTq.com':
+  subdomain:
+    - 'maptq.com'
+'Activ Absence':
+  subdomain:
+    - 'activabsence.co.uk'
+'Blue Jeans Network':
+  subdomain:
+    - 'bluejeans.com'
+'iPR Software':
+  subdomain:
+    - 'iprsoftware.com'
+'NICE inContact':
+  subdomain:
+    - 'nice-incontact.com'
+'Oath':
+  subdomain:
+    - 'oath.com'
+    - 'mydashboard.oath.com'
+'Plateau':
+  subdomain:
+    - 'plateau.com'
+'Uservoice':
+  subdomain:
+    - 'uservoice.com'
+'Remarkety':
+  subdomain:
+    - 'remarkety.com'
+'TurboVote':
+  subdomain:
+    - 'turbovote.org'

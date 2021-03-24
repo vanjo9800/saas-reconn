@@ -44,6 +44,51 @@ type CachedZoneWalk struct {
 	Updated    time.Time
 }
 
+func MergeCachedZoneLists(list1 CachedZoneList, list2 CachedZoneList) (result CachedZoneList) {
+	// list1 and list2 must be sorted
+	result = CachedZoneList{
+		Names: []string{},
+		Prev:  []string{},
+		Next:  []string{},
+	}
+
+	index1, index2 := 0, 0
+	for index1 < len(list1.Names) && index2 < len(list2.Names) {
+		if list1.Names[index1] == list2.Names[index2] {
+			result.Names = append(result.Names, list1.Names[index1])
+			result.Prev = append(result.Prev, list1.Prev[index1])
+			result.Next = append(result.Next, list1.Next[index1])
+			index1++
+			index2++
+		} else if list1.Names[index1] < list2.Names[index2] {
+			result.Names = append(result.Names, list1.Names[index1])
+			result.Prev = append(result.Prev, list1.Prev[index1])
+			result.Next = append(result.Next, list1.Next[index1])
+			index1++
+		} else {
+			result.Names = append(result.Names, list2.Names[index2])
+			result.Prev = append(result.Prev, list2.Prev[index2])
+			result.Next = append(result.Next, list2.Next[index2])
+			index2++
+		}
+	}
+
+	for index1 < len(list1.Names) {
+		result.Names = append(result.Names, list1.Names[index1])
+		result.Prev = append(result.Prev, list1.Prev[index1])
+		result.Next = append(result.Next, list1.Next[index1])
+		index1++
+	}
+	for index2 < len(list2.Names) {
+		result.Names = append(result.Names, list2.Names[index2])
+		result.Prev = append(result.Prev, list2.Prev[index2])
+		result.Next = append(result.Next, list2.Next[index2])
+		index2++
+	}
+
+	return result
+}
+
 /* INITIALISATION */
 
 // NewCache constructs a new empty caching directory
@@ -54,11 +99,7 @@ func NewCache() *Cache {
 	}
 }
 
-// Initialise the database main folder
-func (cache *Cache) Initialise(path string) bool {
-	cacheRWLock.Lock()
-	defer cacheRWLock.Unlock()
-
+func (cache *Cache) initialise(path string) bool {
 	if !cache.initialised {
 		if _, err := os.Stat(fmt.Sprintf("%s/%s/", cache.root, path)); os.IsNotExist(err) {
 			err := os.MkdirAll(fmt.Sprintf("%s/%s/", cache.root, path), 0755)
@@ -90,7 +131,7 @@ func (cache *Cache) FetchCachedDomainCheckResults(domainName string, domainBase 
 func (cache *Cache) fetchCacheForDomainBase(domainBase string) (data map[string]CachedDomainCheck, err error) {
 	byteData, err := cache.fetchFromCache("checks", domainBase)
 	if err != nil {
-		log.Printf("[%s] Could not find existing cache data", domainBase)
+		// log.Printf("[%s] Could not find existing cache data", domainBase)
 		return map[string]CachedDomainCheck{}, nil
 	}
 
@@ -123,7 +164,7 @@ func (cache *Cache) FetchCachedZoneWalk(zone string, salt string, iterations int
 func (cache *Cache) FetchZoneWalkForZone(zone string) (data map[string]CachedZoneWalk, err error) {
 	byteData, err := cache.fetchFromCache("zonewalk", zone)
 	if err != nil {
-		log.Printf("[%s] Could not find existing cache data", zone)
+		// log.Printf("[%s] Could not find existing cache data", zone)
 		return map[string]CachedZoneWalk{}, nil
 	}
 
@@ -137,17 +178,18 @@ func (cache *Cache) FetchZoneWalkForZone(zone string) (data map[string]CachedZon
 }
 
 func (cache *Cache) fetchFromCache(path string, filename string) (data []byte, err error) {
-	success := cache.Initialise(path)
+	cacheRWLock.Lock()
+	defer cacheRWLock.Unlock()
+
+	success := cache.initialise(path)
 	if !success {
 		log.Printf("Could not initialise cache")
 		return nil, errors.New("Could not initialise cache")
 	}
 
-	cacheRWLock.Lock()
-	defer cacheRWLock.Unlock()
 	byteData, err := ioutil.ReadFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, tools.NameToPath(filename)))
 	if err != nil {
-		log.Printf("[%s/%s] Could not find existing cache data %s", path, filename, err)
+		// log.Printf("[%s/%s] Could not find existing cache data %s", path, filename, err)
 		return []byte("{}"), nil
 	}
 
@@ -185,7 +227,26 @@ func (cache *Cache) UpdateCachedZoneWalkData(zone string, zoneWalkData CachedZon
 		return
 	}
 
-	zoneWalksForZone[fmt.Sprintf("%s:%d", zoneWalkData.Salt, zoneWalkData.Iterations)] = zoneWalkData
+	current, ok := zoneWalksForZone[fmt.Sprintf("%s:%d", zoneWalkData.Salt, zoneWalkData.Iterations)]
+	if !ok {
+		current = CachedZoneWalk{
+			Salt:       zoneWalkData.Salt,
+			Iterations: zoneWalkData.Iterations,
+			Hashes:     []string{},
+			List: CachedZoneList{
+				Names: []string{},
+				Prev:  []string{},
+				Next:  []string{},
+			},
+			Guessed: map[string]string{},
+		}
+	}
+	current.Hashes = tools.UniqueStrings(append(current.Hashes, zoneWalkData.Hashes...))
+	current.List = MergeCachedZoneLists(current.List, zoneWalkData.List)
+	for hash, guess := range zoneWalkData.Guessed {
+		current.Guessed[hash] = guess
+	}
+	zoneWalksForZone[fmt.Sprintf("%s:%d", zoneWalkData.Salt, zoneWalkData.Iterations)] = current
 
 	jsonOutput, err := json.Marshal(zoneWalksForZone)
 	if err != nil {
@@ -201,13 +262,14 @@ func (cache *Cache) UpdateCachedZoneWalkData(zone string, zoneWalkData CachedZon
 }
 
 func (cache *Cache) saveCachedData(path string, filename string, data []byte) error {
-	success := cache.Initialise(path)
+	cacheRWLock.Lock()
+	defer cacheRWLock.Unlock()
+
+	success := cache.initialise(path)
 	if !success {
 		return errors.New("Could not initialise cache")
 	}
 
-	cacheRWLock.Lock()
-	defer cacheRWLock.Unlock()
 	err := ioutil.WriteFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, tools.NameToPath(filename)), data, 0755)
 	if err != nil {
 		return errors.New("Failed to write back to cache")
@@ -229,14 +291,15 @@ func (cache *Cache) DeleteZoneWalkCache(domainBase string) bool {
 }
 
 func (cache *Cache) deleteFile(path string, filename string) bool {
-	success := cache.Initialise(path)
+	cacheRWLock.Lock()
+	defer cacheRWLock.Unlock()
+
+	success := cache.initialise(path)
 	if !success {
 		log.Fatal("Could not initialise cache")
 		return false
 	}
 
-	cacheRWLock.Lock()
-	defer cacheRWLock.Unlock()
 	// Check if cached data exists and delete only if there
 	if _, err := os.Stat(fmt.Sprintf("%s/%s/", cache.root, path)); os.IsExist(err) {
 		err := os.Remove(fmt.Sprintf("%s/%s/%s.json", cache.root, path, tools.NameToPath(filename)))
