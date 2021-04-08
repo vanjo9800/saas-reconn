@@ -1,9 +1,19 @@
 package tools
 
 import (
+	"bytes"
+	"encoding/base64"
 	"fmt"
+	"io"
+	"log"
+	"os"
 	"strings"
 )
+
+func CleanBase(base string) string {
+	base = strings.ReplaceAll(base, "/", "_")
+	return base
+}
 
 func ExtractHash(dnsEntry string, zone string) string {
 	dnsEntry = strings.Split(dnsEntry, ".")[0]
@@ -11,10 +21,37 @@ func ExtractHash(dnsEntry string, zone string) string {
 	return strings.ToUpper(dnsEntry)
 }
 
+func LineCount(file string) (count int) {
+	reader, err := os.Open(file)
+	if err != nil {
+		log.Printf("Could not open file %s", file)
+		return count
+	}
+
+	buf := make([]byte, 32*1024)
+	count = 0
+	lineSep := []byte{'\n'}
+
+	for {
+		c, err := reader.Read(buf)
+		count += bytes.Count(buf[:c], lineSep)
+
+		switch {
+		case err == io.EOF:
+			return count
+
+		case err != nil:
+			return count
+		}
+	}
+}
+
 // NameToPath is a method which escapes a name, so we can use it as a filename
 func NameToPath(filename string) string {
 	escapedName := filename
-	escapedName = strings.ReplaceAll(escapedName, "/|\\| ", "_")
+	escapedName = strings.ReplaceAll(escapedName, "/", "_")
+	escapedName = strings.ReplaceAll(escapedName, "\\", "_")
+	escapedName = strings.ReplaceAll(escapedName, " ", "_")
 
 	return escapedName
 }
@@ -33,6 +70,10 @@ func NotIncluded(data []string, includedPool []string) (notIncluded []string) {
 	}
 
 	return notIncluded
+}
+
+func ToBase64(b []byte) string {
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 func UniqueStrings(arr []string) []string {

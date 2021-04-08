@@ -20,13 +20,13 @@ func (s SubdomainBase) GetUrl(name string) string {
 	return fmt.Sprintf("http://%s.%s", name, string(s))
 }
 
-type UrlBase string
+type SubdirectoryBase string
 
-func (s UrlBase) GetBase() string {
+func (s SubdirectoryBase) GetBase() string {
 	return string(s)
 }
 
-func (s UrlBase) GetUrl(name string) string {
+func (s SubdirectoryBase) GetUrl(name string) string {
 	return fmt.Sprintf("http://%s%s", string(s), name)
 }
 

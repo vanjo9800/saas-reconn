@@ -39,11 +39,13 @@ func CrtShQuery(domain string, verbosity int) (subdomains []string) {
 		if failedConnects == connectionRetries {
 			return subdomains
 		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 		pgConn, err = pgconn.ConnectConfig(ctx, cfg)
 	}
 	defer pgConn.Close(context.Background())
 
-	result := pgConn.ExecParams(context.Background(), "SELECT ci.NAME_VALUE NAME_VALUE FROM certificate_identity ci WHERE ci.NAME_TYPE = 'dNSName' AND reverse(lower(ci.NAME_VALUE)) LIKE reverse(lower($1)) LIMIT 100000;", [][]byte{[]byte("%." + domain)}, nil, nil, nil)
+	result := pgConn.ExecParams(context.Background(), "select distinct(lower(name_value)) FROM certificate_and_identities cai WHERE plainto_tsquery($1) @@ identities(cai.CERTIFICATE) AND lower(cai.NAME_VALUE) LIKE ('%.' || $1)", [][]byte{[]byte(domain)}, nil, nil, nil)
 	for result.NextRow() {
 		cleanName := tools.CleanDomainName(string(result.Values()[0]))
 		subdomains = append(subdomains, cleanName)

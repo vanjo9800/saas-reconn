@@ -8,14 +8,13 @@ import (
 	"time"
 
 	"saasreconn/pkg/api"
-	"saasreconn/pkg/checks"
 	"saasreconn/pkg/db"
 	"saasreconn/pkg/provider"
 	"saasreconn/pkg/report"
 	"saasreconn/pkg/tools"
 )
 
-// func export
+const searchDNSCorporateConfidence = 65
 
 func filterConfidence(foundSubdomains map[string][]db.Subdomain, confidenceThreshold int) map[string][]db.Subdomain {
 	domainsReport := make(map[string][]db.Subdomain)
@@ -46,14 +45,13 @@ func takeScreenshots(foundSubdomains map[string][]db.Subdomain) (domainsReport m
 	domainsReport = make(map[string][]db.Subdomain)
 	for record, subdomains := range foundSubdomains {
 		filteredSubdomainsForRecord := []db.Subdomain{}
-		urls := []string{}
 		for _, subdomain := range subdomains {
-			urls = append(urls, tools.URLFromSubdomainEntry(subdomain.Name))
-		}
-		count += len(urls)
-		screenshots := checks.Base64ImageFromURLs(urls)
-		for index, subdomain := range subdomains {
-			subdomain.Screenshot = screenshots[index]
+			var err error
+			subdomain.Screenshot, err = tools.Base64ImageFromURL(tools.URLFromSubdomainEntry(subdomain.Name))
+			if err != nil {
+				subdomain.Screenshot = "N/A"
+			}
+			count++
 			filteredSubdomainsForRecord = append(filteredSubdomainsForRecord, subdomain)
 		}
 		domainsReport[record] = filteredSubdomainsForRecord
@@ -77,11 +75,11 @@ func searchDNSOtherSubdomains(corporateName string, verbosity int) []string {
 func main() {
 
 	// Read flags
-	confidenceThreshold := flag.Int("confidence-threshold", 65, "confidence treshold")
-	endpointsConfig := flag.String("endpoints-config", "configs/saas_endpoints.yaml", "a SaaS providers endpoints file")
+	confidenceThreshold := flag.Int("confidence-threshold", searchDNSCorporateConfidence, "confidence treshold")
+	endpointsConfig := flag.String("endpoints-config", "configs/saas-endpoints.yaml", "a SaaS providers endpoints file")
 	extended := flag.Bool("extended", false, "search for any subdomains matching corporate name")
 	noSearchDNS := flag.Bool("no-searchdns", false, "do not suggest other potential subdomains from SearchDNS")
-	out := flag.String("out", "", "set a custom name for the report file")
+	out := flag.String("outfile", "", "set a custom name for the report file")
 	verbose := flag.Int("verbose", 2, "verbosity factor")
 	flag.Parse()
 
@@ -107,17 +105,17 @@ func main() {
 			otherPotentialSubdomains := tools.UniqueStrings(searchDNSOtherSubdomains(corporateName, *verbose))
 			otherPotentialSubdomains = tools.NotIncluded(otherPotentialSubdomains, db.NamesFromProviderData(exportedSubdomains))
 			otherPotentialSubdomains = tools.FilterTLDs(otherPotentialSubdomains, corporateName)
-			otherPotentialSubdomains = tools.FilterNonResolvingNames(otherPotentialSubdomains)
-			otherPotentialSubdomains = tools.FilterKnownFPs(otherPotentialSubdomains, corporateName)
+			otherPotentialSubdomains = tools.FilterNonAccessibleNames(otherPotentialSubdomains)
+			otherPotentialSubdomains = tools.FilterCommonFPs(otherPotentialSubdomains, corporateName)
 			exportedSubdomains = append(exportedSubdomains, db.ProviderData{
-				Provider: "SearchDNS (potential)",
+				Provider: "SearchDNS (search by corporate name)",
 				Subdomains: map[string][]db.Subdomain{
-					"searchdns": db.MapStringNamesToSubdomain(otherPotentialSubdomains, 65, "SearchDNS (corporate search)"),
+					"searchdns": db.MapStringNamesToSubdomain(otherPotentialSubdomains, searchDNSCorporateConfidence, "SearchDNS (search by corporate name)"),
 				},
 			})
 		}
 		if *verbose >= 2 {
-			fmt.Printf("Found %d potential names\n", len(db.NamesFromProviderData(exportedSubdomains)))
+			fmt.Printf("Found %d potential names from search by corporate name in SearchDNS\n", len(db.NamesFromProviderData(exportedSubdomains)))
 		}
 		for index, providerSubdomain := range exportedSubdomains {
 			exportedSubdomains[index].Subdomains = filterEmptyKeys(filterConfidence(providerSubdomain.Subdomains, *confidenceThreshold))

@@ -25,6 +25,34 @@ type Subdomain struct {
 	Screenshot   string
 }
 
+// Dump is a helper method which prints the whole ProviderData object
+func (data *ProviderData) Dump() {
+	printedIntro := 0
+	for subdomain, domainsArray := range data.Subdomains {
+		if len(domainsArray) == 0 {
+			continue
+		}
+		if printedIntro == 0 {
+			log.Printf("ProviderName: %s\n", data.Provider)
+			log.Printf("Collected: %s\n", data.Collected.String())
+			printedIntro = 1
+		}
+		log.Println("  - " + subdomain)
+		for _, domain := range domainsArray {
+			log.Printf("    - %s, conf. %d, sources %v", domain.Name, domain.Confidence, domain.DiscoveredBy)
+		}
+	}
+}
+
+// EmptyProviderData returns an empty data object, usually when we have no data stored for the provider
+func EmptyProviderData(providerName string) *ProviderData {
+	return &ProviderData{
+		Provider:   providerName,
+		Collected:  time.Now(),
+		Subdomains: make(map[string][]Subdomain),
+	}
+}
+
 // MapStringNamesToSubdomain applies a certain confidence score to a string array of subdomains
 func MapStringNamesToSubdomain(domainNames []string, confidenceScore int, source string) (domains []Subdomain) {
 	for _, domainName := range domainNames {
@@ -50,15 +78,6 @@ func NamesFromProviderData(providerData []ProviderData) (names []string) {
 	return names
 }
 
-// EmptyProviderData returns an empty data object, usually when we have no data stored for the provider
-func EmptyProviderData(providerName string) *ProviderData {
-	return &ProviderData{
-		Provider:   providerName,
-		Collected:  time.Now(),
-		Subdomains: make(map[string][]Subdomain),
-	}
-}
-
 // ProviderDataFromJSON parses a JSON stored data into the ProviderData object
 func ProviderDataFromJSON(data []byte) (providerData *ProviderData, err error) {
 	providerData = new(ProviderData)
@@ -80,6 +99,17 @@ func (data *ProviderData) ToJSON() (bytes []byte, err error) {
 	}
 
 	return jsonOutput, err
+}
+
+// ToPrefixString is a helper method that converts a ProviderData object into a string of subdomains
+func (data *ProviderData) ToPrefixString() (subdomains []string) {
+	for subdomain, domainsArray := range data.Subdomains {
+		for _, domain := range domainsArray {
+			subdomains = append(subdomains, strings.TrimSuffix(domain.Name, "."+subdomain))
+		}
+	}
+
+	return subdomains
 }
 
 func (data *ProviderData) query(domainPattern string) *ProviderData {
@@ -145,39 +175,5 @@ func (data *ProviderData) updateDomainEntries(rootDomain string, newSubdomains [
 
 	return &DataDiff{
 		added: addedDomains,
-	}
-}
-
-// AsString is a helper method that converts a ProviderData object into a string of subdomains
-func (data *ProviderData) AsString(onlyPrefix bool) (subdomains []string) {
-	for subdomain, domainsArray := range data.Subdomains {
-		for _, domain := range domainsArray {
-			if onlyPrefix {
-				subdomains = append(subdomains, strings.TrimSuffix(domain.Name, "."+subdomain))
-			} else {
-				subdomains = append(subdomains, domain.Name)
-			}
-		}
-	}
-
-	return subdomains
-}
-
-// Dump is a helper method which prints the whole ProviderData object
-func (data *ProviderData) Dump() {
-	printedIntro := 0
-	for subdomain, domainsArray := range data.Subdomains {
-		if len(domainsArray) == 0 {
-			continue
-		}
-		if printedIntro == 0 {
-			log.Printf("ProviderName: %s\n", data.Provider)
-			log.Printf("Collected: %s\n", data.Collected.String())
-			printedIntro = 1
-		}
-		log.Println("  - " + subdomain)
-		for _, domain := range domainsArray {
-			log.Printf("    - %s, conf. %d, sources %v", domain.Name, domain.Confidence, domain.DiscoveredBy)
-		}
 	}
 }

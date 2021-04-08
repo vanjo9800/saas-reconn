@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"saasreconn/pkg/tools"
 	"strings"
 )
 
@@ -71,17 +72,17 @@ func runShellCommand(command string, arguments []string) (string, string) {
 }
 
 // RunHashcat runs hashcat with our internal dictionaries against an input file with NSEC3 hashes
-func RunHashcat(config Config, inputFile string) map[string]string {
+func RunHashcat(config Config, inputFile string) (guessed map[string]string, dictionarySize int) {
 	// Check if hashcat is installed
 	versionOut, versionErr := runShellCommand("hashcat_m1", []string{"--version"})
 	if versionOut == "" {
 		log.Printf("Hashcat check failed with status %s", versionErr)
-		return nil
+		return nil, 0
 	}
 	matchedVersionString, err := regexp.MatchString(`v[\d.]+`, versionOut)
 	if err != nil || !matchedVersionString {
 		log.Printf("Hashcat output `%s` does not match a version number", versionOut)
-		return nil
+		return nil, 0
 	}
 
 	// Build dictionary lists
@@ -102,6 +103,7 @@ func RunHashcat(config Config, inputFile string) map[string]string {
 			fmt.Printf("\rPassing wordlist %s...\r", wordlist)
 		}
 		runShellCommand("hashcat_m1", []string{"-O", "-m8300", "-a0", fmt.Sprintf("--potfile-path=data/hashcat/%s.pot", strings.TrimPrefix(inputFile, hashcatLocation)), inputFile, wordlist})
+		dictionarySize += tools.LineCount(wordlist)
 	}
 	if config.Verbose >= 3 {
 		fmt.Println()
@@ -109,7 +111,7 @@ func RunHashcat(config Config, inputFile string) map[string]string {
 
 	hashcatPot, _ := runShellCommand("hashcat_m1", []string{"-O", "-m8300", "-a0", fmt.Sprintf("--potfile-path=data/hashcat/%s.pot", strings.TrimPrefix(inputFile, hashcatLocation)), inputFile, "--show"})
 
-	guessed := make(map[string]string)
+	guessed = make(map[string]string)
 	for _, guess := range strings.Split(hashcatPot, "\n") {
 		if guess == "" {
 			continue
@@ -119,7 +121,7 @@ func RunHashcat(config Config, inputFile string) map[string]string {
 		plaintext := guessParts[4]
 		guessed[hash] = plaintext
 	}
-	return guessed
+	return guessed, dictionarySize
 }
 
 func CleanHashcatDir() {

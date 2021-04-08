@@ -11,7 +11,16 @@ import (
 	"time"
 
 	"saasreconn/pkg/cache"
+	"saasreconn/pkg/tools"
 )
+
+// Config is a class for configuration of the zone-walking module
+type Config struct {
+	Cache         bool
+	CacheLifetime float64
+	Parallel      int
+	Verbose       int
+}
 
 var cacheWriteLock sync.Mutex
 
@@ -26,8 +35,8 @@ func randomPageBody(addressBase AddressBase, verbosity int) (cleanBody string) {
 		return ""
 	}
 
-	errorPageClean1 := cleanResponse(httpSyncRequest(addressBase.GetUrl(randomClient1), verbosity), randomClient1, addressBase.GetBase())
-	errorPageClean2 := cleanResponse(httpSyncRequest(addressBase.GetUrl(randomClient2), verbosity), randomClient2, addressBase.GetBase())
+	errorPageClean1 := tools.CleanResponse(tools.HttpSyncRequest(addressBase.GetUrl(randomClient1), verbosity), randomClient1, addressBase.GetBase())
+	errorPageClean2 := tools.CleanResponse(tools.HttpSyncRequest(addressBase.GetUrl(randomClient2), verbosity), randomClient2, addressBase.GetBase())
 
 	if errorPageClean1 != "" && errorPageClean2 != "" && errorPageClean1 != errorPageClean2 && verbosity >= 2 {
 		ioutil.WriteFile("temp/"+addressBase.GetBase()+"saasreconn1.json", []byte(errorPageClean1), 0755)
@@ -38,7 +47,7 @@ func randomPageBody(addressBase AddressBase, verbosity int) (cleanBody string) {
 	return errorPageClean1
 }
 
-func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRange SubdomainRange, invalidRange SubdomainRange) {
+func (checkRange SubdomainRange) Validate(config Config) (validRange SubdomainRange, invalidRange SubdomainRange) {
 	validRange.Base = checkRange.Base
 	invalidRange.Base = checkRange.Base
 
@@ -47,20 +56,20 @@ func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRan
 		headlessFlag = ".banner-logo"
 	}
 
-	errorPageClean := randomPageBody(checkRange.Base, verbosity)
+	errorPageClean := randomPageBody(checkRange.Base, config.Verbose)
 
-	validPrefixes := make(chan string, 5)
-	invalidPrefixes := make(chan string, 5)
+	validPrefixes := make(chan string, config.Parallel)
+	invalidPrefixes := make(chan string, config.Parallel)
 
 	cachedResults := cache.NewCache()
 
 	var prefixWorkgroup sync.WaitGroup
 	for _, prefix := range checkRange.Prefixes {
 		prefixWorkgroup.Add(1)
-		go func(prefix string, checkRange SubdomainRange, headlessFlag string, errorPageClean string, prefixWorkgroup *sync.WaitGroup) {
+		go func(config Config, prefix string, checkRange SubdomainRange, headlessFlag string, errorPageClean string, prefixWorkgroup *sync.WaitGroup) {
 			defer prefixWorkgroup.Done()
-			cachedDomain, err := cachedResults.FetchCachedDomainCheckResults(prefix, cleanBase(checkRange.Base.GetBase()))
-			if err == nil && !noCache && time.Since(cachedDomain.Updated).Hours() < 48 {
+			cachedDomain, err := cachedResults.FetchCachedDomainCheckResults(prefix, tools.CleanBase(checkRange.Base.GetBase()))
+			if err == nil && config.Cache && time.Since(cachedDomain.Updated).Hours() < config.CacheLifetime {
 				if len(cachedDomain.Address) > 0 && cachedDomain.PageBody {
 					validPrefixes <- prefix
 				} else {
@@ -76,10 +85,9 @@ func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRan
 			}
 
 			defer func() {
-				cachedResults.UpdateCachedDomainCheckData(prefix, cleanBase(checkRange.Base.GetBase()), *domainData)
+				cachedResults.UpdateCachedDomainCheckData(prefix, tools.CleanBase(checkRange.Base.GetBase()), *domainData)
 			}()
 
-			// fmt.Printf("Checking %s\n", checkRange.Base.GetUrl(prefix))
 			if reflect.TypeOf(checkRange.Base).Name() == "SubdomainBase" {
 				url, err := url.Parse(checkRange.Base.GetUrl(prefix))
 				address, err := net.LookupHost(url.Hostname())
@@ -94,7 +102,7 @@ func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRan
 				domainData.Address = []string{"1"}
 			}
 			if len(headlessFlag) > 0 {
-				isValid := headlessChromeReq(checkRange.Base.GetUrl(prefix), headlessFlag, verbosity)
+				isValid := tools.HeadlessChromeRequest(checkRange.Base.GetUrl(prefix), headlessFlag, config.Verbose)
 				if isValid {
 					domainData.PageBody = true
 					validPrefixes <- prefix
@@ -103,9 +111,9 @@ func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRan
 				}
 				return
 			}
-			cleanBody := cleanResponse(httpSyncRequest(checkRange.Base.GetUrl(prefix), verbosity), prefix, checkRange.Base.GetBase())
+			cleanBody := tools.CleanResponse(tools.HttpSyncRequest(checkRange.Base.GetUrl(prefix), config.Verbose), prefix, checkRange.Base.GetBase())
 			if cleanBody == "" {
-				if verbosity >= 5 {
+				if config.Verbose >= 5 {
 					log.Printf("[%s] Could not access subdomain page", checkRange.Base.GetUrl(prefix))
 				}
 				invalidPrefixes <- prefix
@@ -113,11 +121,12 @@ func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRan
 			}
 			if cleanBody != errorPageClean {
 				// url, _ := url.Parse(checkRange.Base.GetUrl(prefix))
-				if !isInvalidTextResponse(cleanBody, checkRange.Base.GetBase()) {
+				if !tools.IsInvalidTextResponse(cleanBody, checkRange.Base.GetBase()) {
+					// TODO: Clean
 					// if strings.HasPrefix(url.Hostname(), "outlook") {
-					if strings.HasSuffix(checkRange.Base.GetBase(), "box.com") {
-						err = ioutil.WriteFile("temp/"+prefix+"."+"box.com.json", []byte(cleanBody), 0755)
-					}
+					// if strings.HasSuffix(checkRange.Base.GetBase(), "mailchimpsites.com") {
+					// 	err = ioutil.WriteFile("temp/"+prefix+"."+"mailchimpsites.com.json", []byte(cleanBody), 0755)
+					// }
 					// 	err = ioutil.WriteFile("temp/"+url.Hostname()+".json", []byte(errorPageClean), 0755)
 					// }
 					domainData.PageBody = true
@@ -128,7 +137,7 @@ func (checkRange SubdomainRange) Validate(noCache bool, verbosity int) (validRan
 			} else {
 				invalidPrefixes <- prefix
 			}
-		}(prefix, checkRange, headlessFlag, errorPageClean, &prefixWorkgroup)
+		}(config, prefix, checkRange, headlessFlag, errorPageClean, &prefixWorkgroup)
 	}
 
 	var resultsParsers sync.WaitGroup

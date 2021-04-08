@@ -4,26 +4,20 @@
 'Microsoft Office 365':
   subdomain:
     - 'sharepoint.com'
-  urls:
+  subdirectory:
     - 'outlook.office.com/owa/'
     - 'outlook.office365.com/owa/'
 'Box.com':
   subdomain:
     - 'box.com'
     - 'account.box.com'
-  checks:
-    - 'logo'
 'Slack':
   subdomain:
     - 'slack.com'
     - 'enterprise.slack.com'
-  checks:
-    - 'logo'
 'Zendesk':
   subdomain:
     - 'zendesk.com'
-  checks:
-    - 'non-existing'
 'Oracle Cloud':
   subdomain:
     - 'oraclecloud.com'
@@ -32,27 +26,22 @@
 'Cisco (Webex)':
   subdomain:
     - 'webex.com'
-  checks:
-    - 'logo'
 'ServiceNow':
   subdomain:
     - 'service-now.com'
-  checks:
-    - 'logo'
 'GitHub':
-  urls:
+  subdirectory:
     - 'github.com/'
 'Workday':
   subdomain:
     - 'myworkdayjobs.com'
-#    - 'wd1.myworkdayjobs.com'
 'Coupa':
   subdomain:
     - 'coupa.com'
     - 'coupahost.com'
-'Atlassian':
-  subdomain:
-    - 'atlassian.net'
+# 'Atlassian':
+#   subdomain:
+#     - 'atlassian.net'
 'Shopify':
   subdomain:
     - 'shopifyapps.com'
@@ -66,13 +55,9 @@
 'Okta':
   subdomain:
     - 'okta.com'
-  checks:
-    - 'logo'
 'OneLogin':
   subdomain:
     - 'onelogin.com'
-  checks:
-    - 'logo'
 'SabaCloud':
   subdomain:
     - 'sabacloud.com'

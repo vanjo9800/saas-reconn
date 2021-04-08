@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"saasreconn/pkg/tools"
 
 	vision "cloud.google.com/go/vision/apiv1"
 )
@@ -46,10 +47,14 @@ func detectLogos(file string) (logos []string, err error) {
 
 func DetectLogosInUrl(url string) (logos []string) {
 
-	screenshotFile := ScreenshotFromURLToFile(url)
+	screenshotFile, err := tools.ScreenshotFromURLToFile(url)
+	if err != nil {
+		log.Printf("[%s] Error taking screenshot %s", url, err)
+		return logos
+	}
 	defer os.Remove(screenshotFile)
 
-	logos, err := detectLogos(screenshotFile)
+	logos, err = detectLogos(screenshotFile)
 	if err != nil {
 		log.Printf("[%s] Error querying Google Cloud API %s", url, err)
 		return logos

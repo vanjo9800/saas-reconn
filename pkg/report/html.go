@@ -10,6 +10,29 @@ import (
 	"strings"
 )
 
+var confidenceReporting map[int]string = map[int]string{
+	30: "marking the subdomain has undergone an active check. It <strong>does not</strong> resolve to an IP address, <strong>cannot</strong> be accessed via HTTP, or results in an error page content.",
+	60: "marking the subdomain has come from an online database such as (Crt.sh, SearchDNS, VirusTotal) and no further checks have been performed. It is not confirmed it is still resolvable and accessible.",
+	65: "marking the subdomain has come from an online database such as (Crt.sh, SearchDNS, VirusTotal) and contains the name of the corporate, but no further checks have been performed. It is not confirmed it is still resolvable and accessible.",
+	70: "marking the subdomain has come from DNS zone-walkng. It is part of the zone as of the current moment, but it is confirmed whether it is accessible.",
+	80: "marking the subdomain has undergone an active check. It resolves to an IP address, can be accessed via HTTTP and produces a  non-error page content.",
+	90: "marking the subdomain has undergone an active check and it is associated with the corporate based on its content.",
+}
+
+var sourcesLinks map[string]string = map[string]string{
+	"Crt.sh":             "https://crt.sh/",
+	"Netcraft SearchDNS": "https://searchdns.netcraft.com/",
+	"VirusTotal":         "https://www.virustotal.com/gui/home/search",
+}
+
+var sourcesDescription map[string]string = map[string]string{
+	"Crt.sh":             "An online free database with SSL/TLS certificate historical information. It is used to extract common names used in certificate that match our corporate, or SaaS providers.",
+	"Netcraft SearchDNS": "An online tool for searching names in DNS zones fetched by users of the Netcraft Toolbar.",
+	"VirusTotal":         "An online database with historical security information for various files, URLs, and subdomains.",
+	"Zone-walking":       "We have come across the subdomain when performaing DNS zone-walking of the zone (supporting both NSEC and NSEC3 signatures).",
+	"Active validation":  "We have performed an <i>active check</i> on the subdomain and it resolves to an IP address and can be accessed by a successful HTTP request returning non-error page content.",
+}
+
 func ExportToHTML(subdomains []db.ProviderData, corporate string, filename string) {
 	htmlContent := fmt.Sprintf(`
 	<!DOCTYPE html>
@@ -25,6 +48,9 @@ func ExportToHTML(subdomains []db.ProviderData, corporate string, filename strin
 			<div class="container">
 				<h1>Exposed pages from <i>Software-as-a-Service (SaaS)</i> providers</h1>
 				<hr/>
+				<p>
+				<h4 class="potential-header">Found %d potential names</h4>
+				</p>
 				<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta2/dist/js/bootstrap.bundle.min.js" integrity="sha384-b5kHyXgcpbZJO/tY9Ul7kGkf1S0CWuKcCD38l8YkeH8z8QjE0GmW1gYU5S9FOnJ0" crossorigin="anonymous"></script>
 				%s
 				<hr/>
@@ -32,23 +58,12 @@ func ExportToHTML(subdomains []db.ProviderData, corporate string, filename strin
 				<p id="confidence">
 					<h3>Confidence</h3>
 					Our application adds a <i>confidence</i> score to each of the reported subdomains based on what level of processing and filtering it has undergone. For now, we have the following levels:
-					<ul>
-						<li><code>60&#37;</code> marking the subdomain has come from an online database such as (Crt.sh, SearchDNS, VirusTotal) and no further checks have been performed. It may have existed at some point, but be inexistent now.</li>
-						<li><code>70&#37;</code> marking the subdomain has come from DNS zone-walkng. It is part of the zone as of the current moment, but its content has not been analysed.</li>
-						<li><code>80&#37;</code> marking the subdomain has undergone an active check. It resolves to an IP address and it can be accessed with a successful HTTP request producing non-error page content.</li>
-						<li><code>90&#37;</code> marking the subdomain has undergone an active check and its content body has the corporate's logo.</li>
-					</ul>
+					%s
 				</p>
 				<p id="discovered-by">
 					<h3>Discovery sources</h3>
 					Our information discovery comes from the following sources:
-					<ul>
-						<li><strong><a target="_blank" href="https://crt.sh/">Crt.sh</a></strong>: An online free database with SSL/TLS certificate historical information. It is used to extract common names used in certificate that match our corporate, or SaaS providers.</li>
-						<li><strong><a target="_blank" href="https://searchdns.netcraft.com/">Netcraft SearchDNS</a></strong>: An online tool for searching names in DNS zones fetched by users of the Netcraft Toolbar.</li>
-						<li><strong><a target="_blank" href="https://www.virustotal.com/gui/home/search">VirusTotal</a></strong>: An online database with historical security information for various files, URLs, and domains.</li>
-						<li><strong>Zone-walking</strong>: We have come across the subdomain when performaing DNS zone-walking of the zone (supporting both NSEC and NSEC3 signatures).</li>
-						<li><strong>Active validation</strong>: We have performed an <i>active check</i> on the subdomain and it resolves to an IP address and can be accessed by a successful HTTP request returning non-error page content.</li>
-					</ul>
+					%s
 				</p>
 				<hr/>
 				%s
@@ -57,7 +72,10 @@ func ExportToHTML(subdomains []db.ProviderData, corporate string, filename strin
 	</html>`,
 		corporate,
 		generateCSSStyle(),
+		countSubdomains(subdomains),
 		generateTables(subdomains),
+		generateConfidenceReport(),
+		generateSourcesReport(),
 		generateFooter())
 
 	// Save HTML report
@@ -81,6 +99,10 @@ func generateCSSStyle() string {
 	h3 {
 		margin: 0;
 		padding: 5px;
+	}
+	.potential-header {
+		color: gray;
+		font-style: italic;
 	}
 	th {fdfdfgdfgdf
 		font-weight: bold;
@@ -121,6 +143,9 @@ func generateCSSStyle() string {
 	}
 	img.screenshot {
 		max-width: 100%;
+	}
+	.card {
+		display: block
 	}`
 }
 
@@ -130,6 +155,16 @@ func Map(elements []string, f func(string) string) []string {
 		mappedElements[i] = f(el)
 	}
 	return mappedElements
+}
+
+func countSubdomains(subdomains []db.ProviderData) (count int) {
+	count = 0
+	for _, providerData := range subdomains {
+		for _, names := range providerData.Subdomains {
+			count += len(names)
+		}
+	}
+	return count
 }
 
 func generateTables(subdomains []db.ProviderData) (tableRepresenation string) {
@@ -190,10 +225,54 @@ func generateTables(subdomains []db.ProviderData) (tableRepresenation string) {
 		tableHTML += "</tbody>"
 
 		tableStructure += "<table class=\"table table-striped\">" + tableHTML + "</table>"
-		tableRepresenation += "<p>" + tableStructure + "</p>"
+
+		clarificationInfo := ""
+		if info, exists := providerClarifications[providerData.Provider]; exists {
+			clarificationInfo = fmt.Sprintf(`<p>
+				<a class="btn btn-link" data-bs-toggle="collapse" href="#clarification-%s" role="button" aria-expanded="false" aria-controls="clarification-%s">
+					Clarification of result
+				</a>
+				</p>`, tools.NameToPath(providerData.Provider), tools.NameToPath(providerData.Provider))
+			clarificationInfo += fmt.Sprintf(`<div class="collapse" id="clarification-%s">
+				<div class="card card-body">
+					%s
+				</div>
+				</div>`, tools.NameToPath(providerData.Provider), info)
+		}
+		tableRepresenation += "<p>" + tableStructure + clarificationInfo + "</p><hr/>"
 	}
 
 	return tableRepresenation
+}
+
+func generateConfidenceReport() string {
+	listItems := []string{}
+	values := make([]int, 0, len(confidenceReporting))
+	for value := range confidenceReporting {
+		values = append(values, value)
+	}
+	sort.Ints(values)
+	for _, value := range values {
+		listItems = append(listItems, fmt.Sprintf("<li><code>%d&#37;</code>: %s</li>", value, confidenceReporting[value]))
+	}
+	return "<ul>" + strings.Join(listItems, "\n") + "</ul>"
+}
+
+func generateSourcesReport() string {
+	listItems := []string{}
+	sources := make([]string, 0, len(sourcesDescription))
+	for source := range sourcesDescription {
+		sources = append(sources, source)
+	}
+	sort.Strings(sources)
+	for _, source := range sources {
+		sourceStyle := source
+		if link, exists := sourcesLinks[source]; exists {
+			sourceStyle = fmt.Sprintf("<a href=\"%s\" target=\"_blank\">%s</a>", link, source)
+		}
+		listItems = append(listItems, fmt.Sprintf("<li><strong>%s</strong>: %s</li>", sourceStyle, sourcesDescription[source]))
+	}
+	return "<ul>" + strings.Join(listItems, "\n") + "</ul>"
 }
 
 func generateFooter() string {

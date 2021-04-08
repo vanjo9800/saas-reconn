@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Database is our data management class
+// Database is the main data management class
 type Database struct {
 	initialised bool
 	root        string
@@ -24,27 +24,14 @@ func NewDatabase() *Database {
 	}
 }
 
-// Initialise the database main folder
-func (db *Database) Initialise() bool {
-
-	if db.initialised {
-		return true
-	}
-
-	if _, err := os.Stat(db.root); os.IsNotExist(err) {
-		err := os.Mkdir(db.root, 0755)
-		if err != nil {
-			log.Fatal(err)
-			return false
-		}
-	}
-	db.initialised = true
-
-	return db.initialised
-}
-
 // GetAll returns all providers in a database
 func (db *Database) GetAll() (providers []string) {
+	success := db.initialise()
+	if !success {
+		log.Printf("Could not initialise database")
+		return nil
+	}
+
 	err := filepath.Walk(db.root, func(path string, info os.FileInfo, err error) error {
 		if strings.HasSuffix(path, ".json") {
 			path = strings.TrimPrefix(path, db.root)
@@ -62,22 +49,6 @@ func (db *Database) GetAll() (providers []string) {
 	return []string{}
 }
 
-func (db *Database) fetchDataForProvider(providerName string) (providerData *ProviderData, err error) {
-	success := db.Initialise()
-	if !success {
-		log.Printf("Could not initialise database")
-		return nil, errors.New("Could not initialise database")
-	}
-
-	data, err := ioutil.ReadFile(db.root + tools.NameToPath(providerName) + ".json")
-	if err != nil {
-		// log.Printf("[%s] Could not find existing provider data", providerName)
-		return EmptyProviderData(providerName), nil
-	}
-
-	return ProviderDataFromJSON(data)
-}
-
 // ProviderQuery queries the stored data of a provider for matches given a regular expression from the user
 func (db *Database) ProviderQuery(providerName string, domainPattern string) (providerData *ProviderData, err error) {
 	providerSavedData, err := db.fetchDataForProvider(providerName)
@@ -87,29 +58,6 @@ func (db *Database) ProviderQuery(providerName string, domainPattern string) (pr
 	}
 
 	return providerSavedData.query(domainPattern), nil
-}
-
-// SaveProviderData saves the current data to the data directory
-func (db *Database) saveProviderData(data *ProviderData) error {
-	success := db.Initialise()
-	if !success {
-		log.Fatal("Could not initialise database")
-		return errors.New("Could not initialise database")
-	}
-
-	dataJSON, err := data.ToJSON()
-	if err != nil {
-		log.Fatal("Could not convert provider data to JSON for provider " + data.Provider)
-		return err
-	}
-
-	err = ioutil.WriteFile(db.root+tools.NameToPath(data.Provider)+".json", dataJSON, 0755)
-	if err != nil {
-		log.Fatal("Failed to write provider data file for provider " + data.Provider)
-		return err
-	}
-
-	return nil
 }
 
 // UpdateProvider updates the currently stored data for a provider and returns the difference between the new and old version
@@ -133,7 +81,7 @@ func (db *Database) UpdateProvider(providerName string, rootDomain string, names
 
 // DeleteProvider deletes provider data
 func (db *Database) DeleteProvider(providerName string) bool {
-	success := db.Initialise()
+	success := db.initialise()
 	if !success {
 		log.Fatal("Could not initialise database")
 		return false
@@ -150,4 +98,59 @@ func (db *Database) DeleteProvider(providerName string) bool {
 	}
 
 	return true
+}
+
+func (db *Database) initialise() bool {
+
+	if db.initialised {
+		return true
+	}
+
+	if _, err := os.Stat(db.root); os.IsNotExist(err) {
+		err := os.Mkdir(db.root, 0755)
+		if err != nil {
+			log.Fatal(err)
+			return false
+		}
+	}
+	db.initialised = true
+
+	return db.initialised
+}
+
+func (db *Database) fetchDataForProvider(providerName string) (providerData *ProviderData, err error) {
+	success := db.initialise()
+	if !success {
+		log.Printf("Could not initialise database")
+		return nil, errors.New("Could not initialise database")
+	}
+
+	data, err := ioutil.ReadFile(db.root + tools.NameToPath(providerName) + ".json")
+	if err != nil {
+		return EmptyProviderData(providerName), nil
+	}
+
+	return ProviderDataFromJSON(data)
+}
+
+func (db *Database) saveProviderData(data *ProviderData) error {
+	success := db.initialise()
+	if !success {
+		log.Fatal("Could not initialise database")
+		return errors.New("Could not initialise database")
+	}
+
+	dataJSON, err := data.ToJSON()
+	if err != nil {
+		log.Fatal("Could not convert provider data to JSON for provider " + data.Provider)
+		return err
+	}
+
+	err = ioutil.WriteFile(db.root+tools.NameToPath(data.Provider)+".json", dataJSON, 0755)
+	if err != nil {
+		log.Fatal("Failed to write provider data file for provider " + data.Provider)
+		return err
+	}
+
+	return nil
 }

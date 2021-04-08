@@ -2,11 +2,9 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/csv"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -33,31 +31,6 @@ func getCachedZones() (list []string) {
 	return list
 }
 
-func lineCount(file string) (count int) {
-	reader, err := os.Open(file)
-	if err != nil {
-		log.Printf("Could not open file %s", file)
-		return count
-	}
-
-	buf := make([]byte, 32*1024)
-	count = 0
-	lineSep := []byte{'\n'}
-
-	for {
-		c, err := reader.Read(buf)
-		count += bytes.Count(buf[:c], lineSep)
-
-		switch {
-		case err == io.EOF:
-			return count
-
-		case err != nil:
-			return count
-		}
-	}
-}
-
 func main() {
 
 	// Read flags
@@ -77,16 +50,36 @@ func main() {
 
 	stats := [][]string{}
 	cachedZones := getCachedZones()
+	cachedResults := cache.NewCache()
 	zonesTitle := []string{"Wordlist", "Size"}
+	zonesSizes := []string{"Zone parameters and size", ""}
 	for _, zone := range cachedZones {
-		zonesTitle = append(zonesTitle, zone)
+		zoneData, err := cachedResults.FetchZoneWalkForZone(zone)
+		if err != nil {
+			log.Printf("[%s] Could not get cached data for zone", zone)
+			continue
+		}
+		for params, data := range zoneData {
+			salt := strings.Split(params, ":")[0]
+			iterations, _ := strconv.Atoi(strings.Split(params, ":")[1])
+			zoneName := zone
+			if iterations == -1 {
+				zoneName = fmt.Sprintf("%s (NSEC)", zone)
+				zonesSizes = append(zonesSizes, fmt.Sprintf("Size %d", len(data.Guessed)))
+			} else {
+				zoneName = fmt.Sprintf("%s (NSEC3)", zone)
+				zonesSizes = append(zonesSizes, fmt.Sprintf("Salt size %d\nIterations %d\nHashes %d", len(salt), iterations, len(data.Hashes)))
+			}
+			zonesTitle = append(zonesTitle, zoneName)
+		}
 	}
 	stats = append(stats, zonesTitle)
+	stats = append(stats, zonesSizes)
 
-	cachedResults := cache.NewCache()
 	for _, wordlist := range wordlists {
 		fmt.Printf("\nExamining wordlist %s\n", wordlist)
-		wordlistData := []string{filepath.Base(wordlist), fmt.Sprintf("%d", lineCount(wordlist))}
+		wordlistData := []string{filepath.Base(wordlist), "0"}
+		wordlistSize := 0
 		for _, zone := range cachedZones {
 			zoneData, err := cachedResults.FetchZoneWalkForZone(zone)
 			if err != nil {
@@ -106,12 +99,20 @@ func main() {
 			for params := range zoneData {
 				salt := strings.Split(params, ":")[0]
 				iterations, _ := strconv.Atoi(strings.Split(params, ":")[1])
-				guessed := zonewalk.Nsec3ZoneReversing(config, salt, iterations)
+				var guessed []string
+				if iterations == -1 {
+					// NSEC based provider, no hashes have been used
+					guessed, wordlistSize = zonewalk.NsecZoneCoverage(config)
+				} else {
+					// NSEC3 based provider, uses SHA1 hashes
+					guessed, wordlistSize = zonewalk.Nsec3ZoneReversing(config, salt, iterations)
+				}
 				wordlistData = append(wordlistData, fmt.Sprintf("%d", len(guessed)))
 				fmt.Printf("\r%d names guessed for zone %s\n", len(guessed), zone)
 			}
 
 		}
+		wordlistData[1] = fmt.Sprintf("%d", wordlistSize)
 		stats = append(stats, wordlistData)
 	}
 
@@ -128,7 +129,7 @@ func main() {
 		}
 	}
 
-	// Write any buffered data to the underlying writer (standard output).
+	// Write any buffered data
 	w.Flush()
 
 	if err := w.Error(); err != nil {

@@ -55,6 +55,7 @@ func main() {
 	var writeLock sync.Mutex
 	outputWriter := csv.NewWriter(outFile)
 	defer outputWriter.Flush()
+
 	// Read header
 	header, err := inputReader.Read()
 	if err != nil {

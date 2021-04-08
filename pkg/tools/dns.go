@@ -1,4 +1,4 @@
-package dns
+package tools
 
 import (
 	"log"
@@ -10,16 +10,22 @@ import (
 	"github.com/miekg/dns"
 )
 
-var timeoutLogLock sync.Mutex
-var timeoutLog map[string]bool = make(map[string]bool)
+// Timeout log
+var dnsTimeoutLogLock sync.Mutex
+var dnsTimeoutLog map[string]bool = make(map[string]bool)
 
-var connectionsOverloadLock sync.Mutex
-var connectionsOverload bool
+// Connections overload flag
+var dnsConnectionsOverload AtomicFlag = AtomicFlag{
+	Flag: false,
+}
 
-const failedRequestsThreshold = 10
-const requestTimeout = 4 * time.Second
-const timeoutWaitTime = 200 * time.Millisecond
-const connectionsWaitPoll = 200 * time.Millisecond
+// Failed requests threshold
+const failedDnsRequestsThreshold = 10
+
+// Timeouts
+const dnsRequestTimeout = 4 * time.Second
+const dnsTimeoutWaitTime = 200 * time.Millisecond
+const dnsConnectionsWaitPoll = 200 * time.Millisecond
 
 func buildMessage() (message *dns.Msg) {
 
@@ -52,7 +58,7 @@ func buildMessage() (message *dns.Msg) {
 
 // GetNameservers returns an list witht the nameservers for a domain name
 func GetNameservers(domain string) (nameservers []string) {
-	response := SyncQuery("8.8.8.8:53", domain, domain, dns.TypeNS, 2)
+	response := DnsSyncQuery("8.8.8.8:53", domain, domain, dns.TypeNS, 2)
 
 	if response == nil {
 		log.Printf("[%s] No nameservers response for %s", domain, domain)
@@ -70,7 +76,7 @@ func GetNameservers(domain string) (nameservers []string) {
 
 func GetClientConn(nameserver string, connectionType string, verbosity int) (client *dns.Client, conn *dns.Conn) {
 	client = new(dns.Client)
-	client.Timeout = requestTimeout
+	client.Timeout = dnsRequestTimeout
 	client.Net = connectionType
 	client.UDPSize = 12320
 
@@ -78,21 +84,17 @@ func GetClientConn(nameserver string, connectionType string, verbosity int) (cli
 	if err != nil {
 		tooManyConnectionsMatch, tooManyConnectionsMatchErr := regexp.MatchString(`socket: too many open files`, err.Error())
 		if tooManyConnectionsMatchErr == nil && tooManyConnectionsMatch {
-			connectionsOverloadLock.Lock()
-			connectionsOverload = true
-			connectionsOverloadLock.Unlock()
+			dnsConnectionsOverload.Toggle()
 
 			defer func() {
-				connectionsOverloadLock.Lock()
-				connectionsOverload = false
-				connectionsOverloadLock.Unlock()
+				dnsConnectionsOverload.Toggle()
 			}()
 
 			// Exponential back-off
 			failedRequests := 0
 			for tooManyConnectionsMatchErr == nil && tooManyConnectionsMatch {
 				failedRequests++
-				if failedRequests > failedRequestsThreshold {
+				if failedRequests > failedDnsRequestsThreshold {
 					log.Printf("[%s] Too many failures to connect, aborting request", nameserver)
 					return nil, nil
 				}
@@ -118,30 +120,27 @@ func GetClientConn(nameserver string, connectionType string, verbosity int) (cli
 }
 
 // SyncQuery is executing a synchronous DNS query waiting for a response, or returning a timeout
-func SyncQuery(nameserver string, zone string, queryName string, queryType uint16, verbosity int) (response *dns.Msg) {
+func DnsSyncQuery(nameserver string, zone string, queryName string, queryType uint16, verbosity int) (response *dns.Msg) {
 	responseChan := make(chan *dns.Msg)
 	if verbosity >= 5 {
 		log.Printf("[%s] Sending DNSSEC query for %s", nameserver, queryName)
 	}
-	AsyncQuery(nameserver, zone, queryName, queryType, verbosity, responseChan)
+	DnsAsyncQuery(nameserver, zone, queryName, queryType, verbosity, responseChan)
 	return <-responseChan
 }
 
 // AsyncQuery is executing an asynchronous DNS query writing the response to a channel passed as a parameter
-func AsyncQuery(nameserver string, zone string, queryName string, queryType uint16, verbosity int, responseChannel chan<- *dns.Msg) {
+func DnsAsyncQuery(nameserver string, zone string, queryName string, queryType uint16, verbosity int, responseChannel chan<- *dns.Msg) {
 
 	message := buildMessage()
 
 	message.Question[0] = dns.Question{Name: dns.Fqdn(queryName), Qtype: queryType, Qclass: dns.ClassINET}
 
 	for {
-		connectionsOverloadLock.Lock()
-		isOverloaded := connectionsOverload
-		connectionsOverloadLock.Unlock()
-		if !isOverloaded {
+		if !dnsConnectionsOverload.Read() {
 			break
 		}
-		time.Sleep(connectionsWaitPoll)
+		time.Sleep(dnsConnectionsWaitPoll)
 	}
 
 	client, conn := GetClientConn(nameserver, "udp", verbosity)
@@ -166,27 +165,27 @@ func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query 
 		if timeoutMatchErr == nil && ioTimeoutMatch {
 			// Loop if another dns request is handling the back-off, or announce this thread is handling it
 			for {
-				timeoutLogLock.Lock()
+				dnsTimeoutLogLock.Lock()
 				nameserverAndZone := conn.RemoteAddr().String() + ":" + zone
-				if val, ok := timeoutLog[nameserverAndZone]; val == false || !ok {
-					timeoutLog[nameserverAndZone] = true
-					timeoutLogLock.Unlock()
+				if val, ok := dnsTimeoutLog[nameserverAndZone]; val == false || !ok {
+					dnsTimeoutLog[nameserverAndZone] = true
+					dnsTimeoutLogLock.Unlock()
 					defer func(nameserverAndZone string) {
-						timeoutLogLock.Lock()
-						timeoutLog[nameserverAndZone] = false
-						timeoutLogLock.Unlock()
+						dnsTimeoutLogLock.Lock()
+						dnsTimeoutLog[nameserverAndZone] = false
+						dnsTimeoutLogLock.Unlock()
 					}(nameserverAndZone)
 					break
 				}
-				timeoutLogLock.Unlock()
-				time.Sleep(timeoutWaitTime)
+				dnsTimeoutLogLock.Unlock()
+				time.Sleep(dnsTimeoutWaitTime)
 			}
 
 			// Exponential back-off
 			failedRequests := 0
 			for timeoutMatchErr == nil && ioTimeoutMatch {
 				failedRequests++
-				if failedRequests > failedRequestsThreshold {
+				if failedRequests > failedDnsRequestsThreshold {
 					log.Printf("[%s] Too many timeouts, aborting request", query)
 					return
 				}

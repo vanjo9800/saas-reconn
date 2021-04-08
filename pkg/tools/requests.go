@@ -1,4 +1,4 @@
-package checks
+package tools
 
 import (
 	"context"
@@ -16,14 +16,14 @@ import (
 const maximumFailedAttempts = 5
 const requestTimeout = 10 * time.Second
 
-func httpSyncRequest(url string, verbosity int) string {
+func HttpSyncRequest(url string, verbosity int) string {
 	responseBody := make(chan string, 1)
 
-	httpAsyncRequest(url, verbosity, responseBody)
+	HttpAsyncRequest(url, verbosity, responseBody)
 	return <-responseBody
 }
 
-func httpAsyncRequest(url string, verbosity int, responseBody chan<- string) {
+func HttpAsyncRequest(url string, verbosity int, responseBody chan<- string) {
 	go func() {
 		transportParameters := &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -80,11 +80,12 @@ func httpAsyncRequest(url string, verbosity int, responseBody chan<- string) {
 			responseBody <- ""
 			return
 		}
-		responseBody <- string(pageBody)
+		pageBodyString := string(pageBody) + resp.Request.URL.Host
+		responseBody <- pageBodyString
 	}()
 }
 
-func headlessChromeReq(url string, keyElement string, verbosity int) bool {
+func HeadlessChromeRequest(url string, keyElement string, verbosity int) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	ctx, cancel = chromedp.NewContext(ctx)
 	defer cancel()

@@ -7,3 +7,5 @@ configs/credentials.yaml
 /resources/companies
 .vscode/
 .DS_Store
+wordlist-evaluation.csv
+/benchmarks/

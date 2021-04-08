@@ -1,14 +1,12 @@
-package checks
+package tools
 
 import (
 	"context"
-	"encoding/base64"
 	"io/ioutil"
 	"log"
 	"math"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/chromedp/cdproto/emulation"
@@ -18,62 +16,52 @@ import (
 
 const screenshotTimeout time.Duration = 20 * time.Second
 
-func toBase64(b []byte) string {
-	return base64.StdEncoding.EncodeToString(b)
-}
-
-func Base64ImageFromURL(url string) string {
-	urls := []string{url}
-	base64Encodings := Base64ImageFromURLs(urls)
-
-	return base64Encodings[0]
-}
-
-func Base64ImageFromURLs(urls []string) (base64Encodings []string) {
-	imageBytes := screenshotFromURLToBytes(urls)
-
-	for _, singleImageBytes := range imageBytes {
-		// Determine the content type of the image file
-		mimeType := http.DetectContentType(singleImageBytes)
-
-		base64Encoding := ""
-		// Prepend the appropriate URI scheme header depending on the MIME type
-		switch mimeType {
-		case "image/jpeg":
-			base64Encoding += "data:image/jpeg;base64,"
-		case "image/png":
-			base64Encoding += "data:image/png;base64,"
-		}
-
-		// Append the base64 encoded output
-		base64Encoding += toBase64(singleImageBytes)
-
-		base64Encodings = append(base64Encodings, base64Encoding)
-
+func Base64ImageFromURL(url string) (base64Encoding string, screenshotError error) {
+	imageBytes, err := screenshotFromURLToBytes(url)
+	if imageBytes == nil {
+		return "", err
 	}
-	return base64Encodings
+
+	// Determine the content type of the image file
+	mimeType := http.DetectContentType(imageBytes)
+
+	// Prepend the appropriate URI scheme header depending on the MIME type
+	switch mimeType {
+	case "image/jpeg":
+		base64Encoding += "data:image/jpeg;base64,"
+	case "image/png":
+		base64Encoding += "data:image/png;base64,"
+	}
+
+	// Append the base64 encoded output
+	base64Encoding += ToBase64(imageBytes)
+
+	return base64Encoding, nil
 }
 
-func ScreenshotFromURLToFile(url string) string {
+func ScreenshotFromURLToFile(url string) (string, error) {
 	tmpFile, err := ioutil.TempFile(os.TempDir(), "saasreconn-scrshot-")
 	if err != nil {
 		log.Printf("Could not create temporary file")
-		return ""
+		return "", err
 	}
 
-	urls := []string{url}
-	imageBytes := screenshotFromURLToBytes(urls)[0]
+	imageBytes, err := screenshotFromURLToBytes(url)
+	if err != nil {
+		log.Printf("Could not take screenshot")
+		return "", err
+	}
 
 	// Write our image to file
 	if err := ioutil.WriteFile(tmpFile.Name(), imageBytes, 0644); err != nil {
 		log.Printf("[%s] Error saving image %s", url, err)
-		return ""
+		return "", err
 	}
 
-	return tmpFile.Name()
+	return tmpFile.Name(), nil
 }
 
-func screenshotFromURLToBytes(urls []string) (imageBytes [][]byte) {
+func screenshotFromURLToBytes(url string) (imageBytes []byte, screenshotError error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("ignore-certificate-errors", "1"),
 	)
@@ -81,30 +69,22 @@ func screenshotFromURLToBytes(urls []string) (imageBytes [][]byte) {
 	defer cancel()
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
+	timeoutContext, cancel := context.WithTimeout(ctx, screenshotTimeout)
+	defer cancel()
 
 	// Run Screenshot Tasks
-	var screenshotTakers sync.WaitGroup
-	for index, url := range urls {
-		imageBytes = append(imageBytes, []byte{})
-		screenshotTakers.Add(1)
-		go func(url string, index int, screenshotTakers *sync.WaitGroup) {
-			defer screenshotTakers.Done()
-			timeoutContext, cancel := context.WithTimeout(ctx, screenshotTimeout)
-			defer cancel()
-			if err := chromedp.Run(timeoutContext, screenshotTasks(url, 90, &imageBytes[index])); err != nil {
-				log.Printf("[%s] Error querying page: %s", url, err)
-			}
-		}(url, index, &screenshotTakers)
+	if err := chromedp.Run(timeoutContext, screenshotTasks(url, 90, &imageBytes)); err != nil {
+		log.Printf("[%s] Error querying page: %s", url, err)
+		return nil, err
 	}
 
-	screenshotTakers.Wait()
-	return imageBytes
+	return imageBytes, nil
 }
 
 func screenshotTasks(url string, quality int64, imageBuffer *[]byte) chromedp.Tasks {
 	return chromedp.Tasks{
 		chromedp.Navigate(url),
-		chromedp.Sleep(3 * time.Second),
+		chromedp.Sleep(5 * time.Second),
 		// chromedp.ActionFunc(func(ctx context.Context) (err error) {
 		// 	*imageBuf, err = page.CaptureScreenshot().WithQuality(90).Do(ctx)
 		// 	return err

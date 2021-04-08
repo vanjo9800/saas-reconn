@@ -2,9 +2,6 @@ package tools
 
 import (
 	"fmt"
-	"log"
-	"net"
-	"net/url"
 	"strings"
 )
 
@@ -25,7 +22,23 @@ var TLDExtensions []string = []string{
 	".om",
 }
 
-var commonFPExtensions []string = []string{}
+var FPExtensions []string = []string{
+	".meb.gov.tr",                 // in http://aol.meb.gov.tr
+	".hkelectric.com",             // in http://aol.hkelectric.com
+	".cellmaps.com",               // in http://verizon.cellmaps.com
+	".aleado.com",                 // in http://yahoo.aleado.com
+	".aleado.ru",                  // in http://yahoo.aleado.ru
+	".digitalmktg.com.hk",         // in http://yahoo.digitalmktg.com.hk
+	".yellowpages.ca",             // in http://yahoo.yellowpages.ca
+	".brand.edgar-online.com",     // in http://yahoo.brand.edgar-online.com
+	".tu-sofia.bg",                // in http://cisco.tu-sofia.bg
+	".num.edu.mn",                 // in http://cisco..num.edu.mn
+	".hackfest.nttltd.global.ntt", // in http://cisco.hackfest.nttltd.global.ntt
+	".dowlis.punchouthub.co.uk",   // in http://cisco.dowlis.punchouthub.co.uk
+	".tosinso.com",                // in http://cisco.tosinso.com
+	".ofppt.info",                 // in http://cisco.ofppt.info
+	".ctcnvk.ro",                  // in http://cisco.ctcnvk.ro
+}
 
 func CleanDomainName(name string) string {
 	name = strings.TrimPrefix(name, "*.")
@@ -35,13 +48,13 @@ func CleanDomainName(name string) string {
 	return name
 }
 
-func FilterKnownFPs(names []string, corporateName string) (filteredNames []string) {
-	knownFPExtensions := make(map[string]bool)
-	for _, FPExtension := range commonFPExtensions {
-		knownFPExtensions[fmt.Sprintf("%s%s", corporateName, FPExtension)] = true
+func FilterCommonFPs(names []string, corporateName string) (filteredNames []string) {
+	foundFPExtensions := make(map[string]bool)
+	for _, FPExtension := range FPExtensions {
+		foundFPExtensions[fmt.Sprintf("%s%s", corporateName, FPExtension)] = true
 	}
 	for _, name := range names {
-		if _, ok := knownFPExtensions[name]; !ok {
+		if _, ok := foundFPExtensions[name]; !ok {
 			filteredNames = append(filteredNames, name)
 		}
 	}
@@ -49,15 +62,11 @@ func FilterKnownFPs(names []string, corporateName string) (filteredNames []strin
 	return filteredNames
 }
 
-func FilterNonResolvingNames(names []string) (filteredNames []string) {
+func FilterNonAccessibleNames(names []string) (filteredNames []string) {
 	for _, name := range names {
-		url, err := url.Parse(fmt.Sprintf("http://%s/", name))
-		if err != nil {
-			log.Printf("Failed parsing URL `%s` when filtering: %s", url, err)
-			continue
-		}
-		address, err := net.LookupHost(url.Hostname())
-		if err != nil || len(address) == 0 {
+		url := fmt.Sprintf("http://%s/", name)
+		cleanBody := HttpSyncRequest(url, 1)
+		if len(cleanBody) == 0 {
 			continue
 		}
 		filteredNames = append(filteredNames, name)
@@ -81,9 +90,9 @@ func FilterTLDs(names []string, corporateName string) (filteredNames []string) {
 
 func ProviderDomainRegex(name string, extended bool) string {
 	if extended {
-		return fmt.Sprintf("%s[0-9._-]", name)
+		return fmt.Sprintf("^%s[0-9._-]", name)
 	}
-	return fmt.Sprintf("%s[._-]", name)
+	return fmt.Sprintf("^%s[._-]", name)
 }
 
 func ProviderDomainText(name string) string {

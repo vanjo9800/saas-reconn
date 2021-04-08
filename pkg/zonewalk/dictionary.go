@@ -37,7 +37,6 @@ func cleanProviderName(name string, base string) string {
 
 func addProviderData(dictionary chan<- string) {
 	providerDatabase := db.NewDatabase()
-	providerDatabase.Initialise()
 
 	providers := providerDatabase.GetAll()
 	for _, provider := range providers {
@@ -75,7 +74,6 @@ func exportProviderData(path string, filename string) {
 	defer providerDictionary.Close()
 
 	providerDatabase := db.NewDatabase()
-	providerDatabase.Initialise()
 
 	providers := providerDatabase.GetAll()
 	for _, provider := range providers {
