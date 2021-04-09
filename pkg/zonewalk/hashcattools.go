@@ -1,14 +1,13 @@
 package zonewalk
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"regexp"
 	"saasreconn/pkg/tools"
 	"strings"
+	"time"
 )
 
 const hashcatLocation = "data/hashcat/"
@@ -21,8 +20,8 @@ func ExportToHashcat(hashes []string, zone string, salt string, iterations int) 
 		return ""
 	}
 
-	// now := time.Now()
-	filePath := fmt.Sprintf("%s%s_%s_%d_%d.hashcat", hashcatLocation, zone, salt, iterations, 0) // now.Unix())
+	now := time.Now()
+	filePath := fmt.Sprintf("%s%s_%s_%d_%d.hashcat", hashcatLocation, zone, salt, iterations, now.Unix())
 
 	hashcatFile, err := os.Create(filePath)
 	if err != nil {
@@ -42,39 +41,10 @@ func ExportToHashcat(hashes []string, zone string, salt string, iterations int) 
 	return filePath
 }
 
-func runShellCommand(command string, arguments []string) (string, string) {
-	cmd := exec.Command(command, arguments...)
-	fullCommand := cmd.String()
-	stdoutReader, err := cmd.StdoutPipe()
-	stderrReader, err := cmd.StderrPipe()
-
-	if err != nil {
-		log.Printf("Unexpected error initializing context `%s`: %s", fullCommand, err)
-		return "", ""
-	}
-	if err := cmd.Start(); err != nil {
-		log.Printf("Unexpected error starting command `%s`: %s", fullCommand, err)
-		return "", ""
-	}
-
-	stdoutBuf := new(bytes.Buffer)
-	stderrBuf := new(bytes.Buffer)
-
-	stdoutBuf.ReadFrom(stdoutReader)
-	stderrBuf.ReadFrom(stderrReader)
-
-	if err := cmd.Wait(); err != nil && stderrBuf.String() != "" {
-		log.Printf("Unexpected error executing command `%s`: %s, Err: %s", fullCommand, err, stderrBuf.String())
-		return "", ""
-	}
-
-	return stdoutBuf.String(), stderrBuf.String()
-}
-
 // RunHashcat runs hashcat with our internal dictionaries against an input file with NSEC3 hashes
 func RunHashcat(config Config, inputFile string) (guessed map[string]string, dictionarySize int) {
 	// Check if hashcat is installed
-	versionOut, versionErr := runShellCommand("hashcat_m1", []string{"--version"})
+	versionOut, versionErr := tools.RunShellCommand("hashcat_m1", []string{"--version"})
 	if versionOut == "" {
 		log.Printf("Hashcat check failed with status %s", versionErr)
 		return nil, 0
@@ -102,14 +72,14 @@ func RunHashcat(config Config, inputFile string) (guessed map[string]string, dic
 		if config.Verbose >= 3 {
 			fmt.Printf("\rPassing wordlist %s...\r", wordlist)
 		}
-		runShellCommand("hashcat_m1", []string{"-O", "-m8300", "-a0", fmt.Sprintf("--potfile-path=data/hashcat/%s.pot", strings.TrimPrefix(inputFile, hashcatLocation)), inputFile, wordlist})
+		tools.RunShellCommand("hashcat_m1", []string{"-O", "-m8300", "-a0", fmt.Sprintf("--potfile-path=data/hashcat/%s.pot", strings.TrimPrefix(inputFile, hashcatLocation)), inputFile, wordlist})
 		dictionarySize += tools.LineCount(wordlist)
 	}
 	if config.Verbose >= 3 {
 		fmt.Println()
 	}
 
-	hashcatPot, _ := runShellCommand("hashcat_m1", []string{"-O", "-m8300", "-a0", fmt.Sprintf("--potfile-path=data/hashcat/%s.pot", strings.TrimPrefix(inputFile, hashcatLocation)), inputFile, "--show"})
+	hashcatPot, _ := tools.RunShellCommand("hashcat_m1", []string{"-O", "-m8300", "-a0", fmt.Sprintf("--potfile-path=data/hashcat/%s.pot", strings.TrimPrefix(inputFile, hashcatLocation)), inputFile, "--show"})
 
 	guessed = make(map[string]string)
 	for _, guess := range strings.Split(hashcatPot, "\n") {

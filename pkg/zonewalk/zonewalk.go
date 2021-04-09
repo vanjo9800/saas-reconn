@@ -299,8 +299,10 @@ func NsecZoneWalking(config Config) (names []string) {
 			if config.RateLimit > 0 {
 				time.Sleep(time.Second/time.Duration(config.RateLimit) - time.Since(queryBackOff))
 			} else {
-				// Need to back-off for at least a second to not overload DNS client
-				time.Sleep(time.Millisecond - time.Since(queryBackOff))
+				if config.RateLimit == 0 {
+					// Need to back-off for at least a second to not overload DNS client
+					time.Sleep(time.Millisecond - time.Since(queryBackOff))
+				}
 			}
 		}
 		finishedZonewalking = true
@@ -311,7 +313,9 @@ func NsecZoneWalking(config Config) (names []string) {
 		case <-timeout:
 			finishedZonewalking = true
 		case <-tick:
-			fmt.Printf("\r[%s:%s] NSEC zone-walking: Found %d names, %d queries, elapsed time %s", config.Nameserver, config.Zone, len(names), queries.Read(), time.Since(startScan))
+			if config.Verbose >= 3 {
+				fmt.Printf("\r[%s:%s] NSEC zone-walking: Found %d names, %d queries, elapsed time %s", config.Nameserver, config.Zone, len(names), queries.Read(), time.Since(startScan))
+			}
 		}
 	}
 

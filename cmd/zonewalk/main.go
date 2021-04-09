@@ -45,7 +45,7 @@ func main() {
 	noCache := flag.Bool("no-cache", false, "a bool whether to use pre-existing")
 	parallelRequests := flag.Int("parallel-requests", 5, "number of DNS requests to send in parallel")
 	providerName := flag.String("provider", "", "run zone-walking for a specific provider")
-	rateLimit := flag.Int("rate-limit", 20, "limit the number of DNS requests per second to avoid blocking (0 for no limit)")
+	rateLimit := flag.Int("rate-limit", 20, "limit the number of DNS requests per second to avoid blocking (0 for minimal limit for contention protection, -1 for no limit at all)")
 	timeout := flag.Int("timeout", 60, "number of seconds to run a zone zonewalk mapping")
 	updateCache := flag.Bool("update-cache", true, "should the command update the current zone-walking cache entries")
 	verbose := flag.Int("verbose", 3, "verbosity factor")
