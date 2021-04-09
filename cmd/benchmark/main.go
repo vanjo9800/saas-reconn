@@ -11,7 +11,7 @@ import (
 
 const experimentsPerSample = 3
 
-var nsecRecordSizes []int = []int{50, 100, 200, 500, 1000}
+var nsecRecordSizes []int = []int{50} //, 100, 200, 500, 1000}
 
 const nsecZonePattern string = "nsec%d.kukk.uk"
 const nsec3ZonePattern string = "nsec3_%d.kukk.uk"
@@ -23,7 +23,7 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 		Mode:        1,
 		Nameserver:  nameserver + ":53",
 		RateLimit:   -1,
-		Timeout:     60, // a minute
+		Timeout:     0, // no timeout
 		Verbose:     1,
 		Zone:        zone,
 	})
@@ -34,7 +34,7 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 		UpdateCache: false,
 		Nameserver:  nameserver + ":53",
 		RateLimit:   0,
-		Timeout:     60, // a minute
+		Timeout:     0, // no timeout
 		Verbose:     1,
 		Zone:        zone,
 	})
@@ -45,7 +45,7 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 		UpdateCache: false,
 		Nameserver:  nameserver + ":53",
 		RateLimit:   20,
-		Timeout:     60, // a minute
+		Timeout:     0, // no timeout
 		Verbose:     1,
 		Zone:        zone,
 	})
