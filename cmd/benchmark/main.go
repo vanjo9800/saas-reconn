@@ -32,7 +32,6 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 	start = time.Now()
 	zonewalk.NsecZoneWalking(zonewalk.Config{
 		UpdateCache: false,
-		Mode:        1,
 		Nameserver:  nameserver + ":53",
 		RateLimit:   0,
 		Timeout:     60, // a minute
@@ -44,7 +43,6 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 	start = time.Now()
 	zonewalk.NsecZoneWalking(zonewalk.Config{
 		UpdateCache: false,
-		Mode:        1,
 		Nameserver:  nameserver + ":53",
 		RateLimit:   20,
 		Timeout:     60, // a minute

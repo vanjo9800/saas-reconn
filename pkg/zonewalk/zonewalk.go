@@ -252,7 +252,11 @@ func updateNsecCache(zone string, cachedZoneWalk cache.CachedZoneWalk) {
 
 func NsecZoneWalking(config Config) (names []string) {
 
-	cachedZone := fetchNsecCache(config.Zone)
+	cachedZone := cache.CachedZoneWalk{
+		Salt:       "",
+		Iterations: -1,
+		Guessed:    map[string]string{},
+	}
 	finishedZonewalking := false
 	startScan := time.Now()
 	timeout := time.After(time.Duration(config.Timeout) * time.Second)
