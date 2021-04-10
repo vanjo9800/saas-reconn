@@ -9,9 +9,10 @@ import (
 	"time"
 )
 
-const experimentsPerSample = 3
+const experimentsPerSample = 5
 
-var nsecRecordSizes []int = []int{50} //, 100, 200, 500, 1000}
+var nsecRecordSizes []int = []int{50, 100, 200, 500, 1000}
+var nsec3RecordSizes []int = []int{1000, 2000, 5000, 10000, 20000}
 
 const nsecZonePattern string = "nsec%d.kukk.uk"
 const nsec3ZonePattern string = "nsec3_%d.kukk.uk"
@@ -58,14 +59,35 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 	return results
 }
 
-func printResults(name string, results map[int][]float64) {
+func runNsec3Experiment(zone string, nameserver string, parallelReq int, rate int) (hashes int, queries int) {
+	hashes, queries = zonewalk.Nsec3ZoneMapping(zonewalk.Config{
+		Mode:       2,
+		Nameserver: nameserver + ":53",
+		Parallel:   parallelReq,
+		RateLimit:  rate,
+		Timeout:    60,
+		Verbose:    1,
+		Zone:       zone,
+	}, "03f92714", 10)
+
+	return hashes, queries
+}
+
+func printResults(name string, results map[int][]float64, sizes []int) {
 	fmt.Print(name)
+	sizeAccum := make(map[int]float64)
 	for repeats := 0; repeats < experimentsPerSample; repeats++ {
-		for _, size := range nsecRecordSizes {
+		for _, size := range sizes {
 			fmt.Printf(",%.3f", results[size][repeats])
+			sizeAccum[size] += results[size][repeats]
 		}
 		fmt.Println()
 	}
+	fmt.Print("Mean,")
+	for _, size := range sizes {
+		fmt.Printf(",%.3f", sizeAccum[size]/float64(len(sizes)))
+	}
+	fmt.Println()
 }
 
 func main() {
@@ -97,12 +119,35 @@ func main() {
 		}
 		fmt.Println()
 
-		printResults("saas-reconn with no rate limiting", saasReconnNoLimResults)
-		printResults("saas-reconn with contention protection", saasReconnContLimResults)
-		printResults("saas-reconn with safe rate limit", saasReconnSafeRateResults)
-		printResults("ldns-walk", ldnsWalkResults)
+		printResults("saas-reconn with no rate limiting", saasReconnNoLimResults, nsecRecordSizes)
+		printResults("saas-reconn with contention protection", saasReconnContLimResults, nsecRecordSizes)
+		printResults("saas-reconn with safe rate limit", saasReconnSafeRateResults, nsecRecordSizes)
+		printResults("ldns-walk", ldnsWalkResults, nsecRecordSizes)
 
-	} else if *task == "nsec3" {
+	} else if *task == "nsec3-parallel" {
+		parallelOptions := []int{1, 5, 10, 20, 50, 100, 200, 500, 1000}
+
+		for _, size := range nsec3RecordSizes {
+			fmt.Printf(",%d", size)
+		}
+		fmt.Println()
+
+		for _, parallelReq := range parallelOptions {
+			saasReconnResults := make(map[int][]float64)
+			for _, size := range nsecRecordSizes {
+				for repeats := 0; repeats < experimentsPerSample; repeats++ {
+					log.Printf("Size %d, experiment %d", size, repeats)
+					result, _ := runNsec3Experiment(fmt.Sprintf(nsec3ZonePattern, size), *nameserver, parallelReq, 0)
+					saasReconnResults[size] = append(saasReconnResults[size], float64(result))
+				}
+			}
+
+			printResults(fmt.Sprintf("saas-reconn with %d parallel queries", parallelReq), saasReconnResults, nsec3RecordSizes)
+		}
+
+	} else if *task == "nsec3-rate" {
+
+	} else if *task == "nsec3-other" {
 
 	} else {
 		fmt.Println("Invalid task")

@@ -388,7 +388,7 @@ func updateNsec3Cache(zone string, cachedZoneWalk cache.CachedZoneWalk) {
 	cachedResults.UpdateCachedZoneWalkData(zone, cachedZoneWalk)
 }
 
-func Nsec3ZoneMapping(config Config, salt string, iterations int) {
+func Nsec3ZoneMapping(config Config, salt string, iterations int) (hashesCount int, queriesCount int) {
 
 	var cachedZoneMap cache.CachedZoneWalk
 	if config.MappingCache {
@@ -401,7 +401,7 @@ func Nsec3ZoneMapping(config Config, salt string, iterations int) {
 	start := time.Now()
 
 	initialHashCount := len(cachedZoneMap.Hashes)
-	hashes, exportedList := nsec3ZoneScan(config, salt, iterations, &cachedZoneMap.List)
+	hashes, exportedList, queriesCount := nsec3ZoneScan(config, salt, iterations, &cachedZoneMap.List)
 	cachedZoneMap.Hashes = tools.UniqueStrings(append(cachedZoneMap.Hashes, hashes...))
 	cachedZoneMap.Salt = salt
 	cachedZoneMap.Iterations = iterations
@@ -419,6 +419,8 @@ func Nsec3ZoneMapping(config Config, salt string, iterations int) {
 	if config.UpdateCache {
 		updateNsec3Cache(config.Zone, cachedZoneMap)
 	}
+
+	return len(hashes), queriesCount
 }
 
 func Nsec3ZoneReversing(config Config, salt string, iterations int) (names []string, dictionarySize int) {
@@ -463,7 +465,7 @@ func Nsec3ZoneReversing(config Config, salt string, iterations int) (names []str
 	return names, dictionarySize
 }
 
-func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *cache.CachedZoneList) (hashes []string, treeJSON cache.CachedZoneList) {
+func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *cache.CachedZoneList) (hashes []string, treeJSON cache.CachedZoneList, queriesCount int) {
 	zoneList := CreateZoneList(*cachedZoneList)
 
 	finishedMapping := false
@@ -492,10 +494,10 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 		close(pendingLookups)
 	}()
 
-	dnsQueriesCount := 0
+	queriesCount = 0
 	hashDelayAccum, hashDelayCount := 0, 0
 	dnsRequestsOnRoute := make(chan bool, config.Parallel)
-	go func(rateLimit int) {
+	go func() {
 		for !finishedMapping {
 			start := time.Now()
 			domainLookup, more := <-pendingLookups
@@ -507,20 +509,19 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 
 			// Limit number of parallel DNS queries
 			dnsRequestsOnRoute <- true
-			defer func() {
-				<-dnsRequestsOnRoute
-			}()
 
 			tools.DnsAsyncQuery(config.Nameserver, config.Zone, domainLookup, dns.TypeA, config.Verbose, pendingResults)
-			dnsQueriesCount++
-			if rateLimit > 0 {
-				time.Sleep(time.Second / time.Duration(rateLimit))
+			queriesCount++
+			if config.RateLimit > 0 {
+				time.Sleep(time.Second / time.Duration(config.RateLimit))
 			} else {
 				// Need to back-off for at least a second to not overload DNS client
-				time.Sleep(time.Millisecond)
+				if config.RateLimit == 0 {
+					time.Sleep(time.Millisecond)
+				}
 			}
 		}
-	}(config.RateLimit)
+	}()
 
 	dnsQueryDelayAccum, dnsQueryDelayCount := 0, 0
 	dnsRespProcessAccum, dnsRespProcessCount := 0, 0
@@ -529,6 +530,7 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 		for !finishedMapping {
 			start := time.Now()
 			results := <-pendingResults
+			<-dnsRequestsOnRoute
 			dnsQueryDelayAccum += int(time.Since(start).Milliseconds())
 			dnsQueryDelayCount++
 
@@ -577,7 +579,7 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 		select {
 		case <-timeout:
 			finishedMapping = true
-			return zoneList.HashedNames(), zoneList.ExportList()
+			return zoneList.HashedNames(), zoneList.ExportList(), queriesCount
 		case <-tick:
 			if config.Verbose >= 3 {
 				// unQCoverage
@@ -586,7 +588,7 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 					config.Nameserver,
 					config.Zone,
 					zoneList.records(),
-					dnsQueriesCount,
+					queriesCount,
 					2*(zoneList.records()-lastCount),
 					// unQCoverage,
 					QCoverage,
