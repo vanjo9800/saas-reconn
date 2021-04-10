@@ -106,6 +106,9 @@ func (list *ZoneList) Coverage() (string, string) {
 
 	list.addingMutex.Lock()
 
+	if list.Distances.Size() == 0 {
+		return "0", "0"
+	}
 	// Unquantiled
 	result1 := new(big.Float)
 	result1.Quo(new(big.Float).SetInt(&list.DistanceSum), big.NewFloat(float64(list.Distances.Size())))
