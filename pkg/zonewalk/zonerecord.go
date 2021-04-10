@@ -105,6 +105,9 @@ var quantileWeights = []float64{0.41, 0.15, 0.10, 0.08, 0.07, 0.05, 0.05, 0.04, 
 func (list *ZoneList) Coverage() (string, string) {
 
 	list.addingMutex.Lock()
+	defer func() {
+		list.addingMutex.Unlock()
+	}()
 
 	if list.Distances.Size() == 0 {
 		return "0", "0"
@@ -147,8 +150,6 @@ func (list *ZoneList) Coverage() (string, string) {
 		}
 	}
 	result2.Quo(new(big.Float).SetInt(sha1MaxSize), result2)
-
-	list.addingMutex.Unlock()
 
 	return result1.String(), result2.String()
 }

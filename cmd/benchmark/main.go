@@ -65,8 +65,8 @@ func runNsec3Experiment(zone string, nameserver string, parallelReq int, rate in
 		Nameserver: nameserver + ":53",
 		Parallel:   parallelReq,
 		RateLimit:  rate,
-		Timeout:    60,
-		Verbose:    1,
+		Timeout:    30,
+		Verbose:    3,
 		Zone:       zone,
 	}, "03f92714", 10)
 
@@ -134,7 +134,7 @@ func main() {
 
 		for _, parallelReq := range parallelOptions {
 			saasReconnResults := make(map[int][]float64)
-			for _, size := range nsecRecordSizes {
+			for _, size := range nsec3RecordSizes {
 				for repeats := 0; repeats < experimentsPerSample; repeats++ {
 					log.Printf("Size %d, experiment %d", size, repeats)
 					result, _ := runNsec3Experiment(fmt.Sprintf(nsec3ZonePattern, size), *nameserver, parallelReq, 0)
