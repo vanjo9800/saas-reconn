@@ -510,7 +510,7 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 			// Limit number of parallel DNS queries
 			dnsRequestsOnRoute <- true
 
-			tools.DnsAsyncQuery(config.Nameserver, config.Zone, domainLookup, dns.TypeA, config.Verbose, pendingResults)
+			tools.DnsAsyncQuery(config.Nameserver, config.Zone, domainLookup, dns.TypeA, config.Verbose, pendingResults, func() { <-dnsRequestsOnRoute })
 			queriesCount++
 			if config.RateLimit > 0 {
 				time.Sleep(time.Second / time.Duration(config.RateLimit))
@@ -520,7 +520,7 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 					time.Sleep(time.Millisecond)
 				}
 			}
-			<-dnsRequestsOnRoute
+			// <-dnsRequestsOnRoute
 		}
 	}()
 

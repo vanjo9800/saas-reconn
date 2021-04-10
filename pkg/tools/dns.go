@@ -125,12 +125,12 @@ func DnsSyncQuery(nameserver string, zone string, queryName string, queryType ui
 	if verbosity >= 5 {
 		log.Printf("[%s] Sending DNSSEC query for %s", nameserver, queryName)
 	}
-	DnsAsyncQuery(nameserver, zone, queryName, queryType, verbosity, responseChan)
+	DnsAsyncQuery(nameserver, zone, queryName, queryType, verbosity, responseChan, func() {})
 	return <-responseChan
 }
 
 // AsyncQuery is executing an asynchronous DNS query writing the response to a channel passed as a parameter
-func DnsAsyncQuery(nameserver string, zone string, queryName string, queryType uint16, verbosity int, responseChannel chan<- *dns.Msg) {
+func DnsAsyncQuery(nameserver string, zone string, queryName string, queryType uint16, verbosity int, responseChannel chan<- *dns.Msg, onReturn func()) {
 
 	message := buildMessage()
 
@@ -150,10 +150,12 @@ func DnsAsyncQuery(nameserver string, zone string, queryName string, queryType u
 		}
 		return
 	}
-	go sendDNSRequest(client, conn, message, queryName, zone, verbosity, responseChannel)
+	go sendDNSRequest(client, conn, message, queryName, zone, verbosity, responseChannel, onReturn)
 }
 
-func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query string, zone string, verbosity int, responseChannel chan<- *dns.Msg) {
+func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query string, zone string, verbosity int, responseChannel chan<- *dns.Msg, onReturn func()) {
+
+	defer onReturn()
 
 	// Send request
 	response, rtt, dnsErr := client.ExchangeWithConn(message, conn)
@@ -216,7 +218,7 @@ func sendDNSRequest(client *dns.Client, conn *dns.Conn, message *dns.Msg, query 
 				}
 				return
 			}
-			sendDNSRequest(tcpClient, tcpConn, message, query, zone, verbosity, responseChannel)
+			sendDNSRequest(tcpClient, tcpConn, message, query, zone, verbosity, responseChannel, func() {})
 		} else {
 			log.Printf("[%s] Already using TCP, could not parse truncated response", query)
 		}
