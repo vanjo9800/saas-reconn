@@ -53,7 +53,7 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 	results = append(results, time.Since(start).Seconds())
 
 	start = time.Now()
-	tools.RunShellCommand("ldns-walk", []string{"-f", fmt.Sprintf("@%s", nameserver), zone})
+	tools.RunShellCommand("ldns-walk", []string{fmt.Sprintf("@%s", nameserver), zone})
 	results = append(results, time.Since(start).Seconds())
 
 	return results

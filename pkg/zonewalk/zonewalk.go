@@ -520,6 +520,7 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 					time.Sleep(time.Millisecond)
 				}
 			}
+			<-dnsRequestsOnRoute
 		}
 	}()
 
@@ -530,7 +531,6 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 		for !finishedMapping {
 			start := time.Now()
 			results := <-pendingResults
-			<-dnsRequestsOnRoute
 			dnsQueryDelayAccum += int(time.Since(start).Milliseconds())
 			dnsQueryDelayCount++
 
