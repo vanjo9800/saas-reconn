@@ -331,7 +331,7 @@ func (list *ZoneList) Covered(hash string) bool {
 	// If we know the boundary hashes of the zone, we can discard all others in between them
 	if list.Names.Size() > 0 {
 		node = list.Names.Left().Value.(ZoneRecord)
-		if node.Prev != "" {
+		if node.Prev != "" && hash < node.Name {
 			return true
 		}
 	}
