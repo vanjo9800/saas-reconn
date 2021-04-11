@@ -129,7 +129,7 @@ func main() {
 		printResults("saas-reconn with safe rate limit", saasReconnSafeRateResults, nsecRecordSizes)
 		printResults("ldns-walk", ldnsWalkResults, nsecRecordSizes)
 
-	} else if *task == "nsec3-parallel" {
+	} else if *task == "nsec3-saasreconn" {
 		//parallelOptions := []int{1, 5, 10, 20, 50, 100, 200, 500, 1000}
 		//parallelOptions := []int{1, 10, 20, 100}
 
@@ -145,15 +145,12 @@ func main() {
 				log.Printf("Size %d, experiment %d, parallel %d", size, repeats, *parallel)
 				result, _ := runNsec3Experiment(fmt.Sprintf(nsec3ZonePattern, size), *nameserver, *parallel, *rate, *verbose)
 				saasReconnResults[size] = append(saasReconnResults[size], float64(result))
-				time.Sleep(5 * time.Second)
+				time.Sleep(20 * time.Second)
 			}
 		}
 
-		printResults(fmt.Sprintf("saas-reconn with %d parallel queries", *parallel), saasReconnResults, nsec3RecordSizes)
+		printResults(fmt.Sprintf("saas-reconn with %d p. queries and %d rate limit", *parallel, *rate), saasReconnResults, nsec3RecordSizes)
 		// }
-
-	} else if *task == "nsec3-rate" {
-
 	} else if *task == "nsec3-other" {
 
 	} else {
