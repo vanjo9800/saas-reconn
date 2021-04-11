@@ -70,6 +70,8 @@ func runNsec3Experiment(zone string, nameserver string, parallelReq int, rate in
 		Zone:       zone,
 	}, "03f92714", 10)
 
+	log.Printf("%s:%s - req %d - rate %d - %d hashes and %d queries", zone, nameserver, parallelReq, rate, hashes, queries)
+
 	return hashes, queries
 }
 
