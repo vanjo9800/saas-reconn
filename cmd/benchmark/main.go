@@ -95,6 +95,8 @@ func main() {
 	// Read flags
 	task := flag.String("task", "", "the task to be bechmarked")
 	nameserver := flag.String("nameserver", "127.0.0.1", "nameserver to zone-walk")
+	parallel := flag.Int("parallel", 1, "parallel queries")
+	rate := flag.Int("rate", 0, "rate limit")
 	flag.Parse()
 
 	if *task == "nsec" {
@@ -126,26 +128,26 @@ func main() {
 
 	} else if *task == "nsec3-parallel" {
 		//parallelOptions := []int{1, 5, 10, 20, 50, 100, 200, 500, 1000}
-		parallelOptions := []int{1, 10, 20, 100}
+		//parallelOptions := []int{1, 10, 20, 100}
 
 		for _, size := range nsec3RecordSizes {
 			fmt.Printf(",%d", size)
 		}
 		fmt.Println()
 
-		for _, parallelReq := range parallelOptions {
-			saasReconnResults := make(map[int][]float64)
-			for _, size := range nsec3RecordSizes {
-				for repeats := 0; repeats < experimentsPerSample; repeats++ {
-					log.Printf("Size %d, experiment %d, parallel %d", size, repeats, parallelReq)
-					result, _ := runNsec3Experiment(fmt.Sprintf(nsec3ZonePattern, size), *nameserver, parallelReq, 0)
-					saasReconnResults[size] = append(saasReconnResults[size], float64(result))
-					time.Sleep(5 * time.Second)
-				}
+		// for _, parallelReq := range parallelOptions {
+		saasReconnResults := make(map[int][]float64)
+		for _, size := range nsec3RecordSizes {
+			for repeats := 0; repeats < experimentsPerSample; repeats++ {
+				log.Printf("Size %d, experiment %d, parallel %d", size, repeats, *parallel)
+				result, _ := runNsec3Experiment(fmt.Sprintf(nsec3ZonePattern, size), *nameserver, *parallel, *rate)
+				saasReconnResults[size] = append(saasReconnResults[size], float64(result))
+				time.Sleep(5 * time.Second)
 			}
-
-			printResults(fmt.Sprintf("saas-reconn with %d parallel queries", parallelReq), saasReconnResults, nsec3RecordSizes)
 		}
+
+		printResults(fmt.Sprintf("saas-reconn with %d parallel queries", *parallel), saasReconnResults, nsec3RecordSizes)
+		// }
 
 	} else if *task == "nsec3-rate" {
 
