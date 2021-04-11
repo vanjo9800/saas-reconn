@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const experimentsPerSample = 5
+const experimentsPerSample = 1
 
 var nsecRecordSizes []int = []int{50, 100, 200, 500, 1000}
 var nsec3RecordSizes []int = []int{1000, 2000, 5000, 10000, 20000}
@@ -85,11 +85,11 @@ func printResults(name string, results map[int][]float64, sizes []int) {
 		}
 		fmt.Println()
 	}
-	fmt.Print("Mean,")
-	for _, size := range sizes {
-		fmt.Printf(",%.3f", sizeAccum[size]/float64(len(sizes)))
-	}
-	fmt.Println()
+	// fmt.Print("Mean,")
+	// for _, size := range sizes {
+	// 	fmt.Printf(",%.3f", sizeAccum[size]/float64(len(sizes)))
+	// }
+	// fmt.Println()
 }
 
 func main() {
@@ -97,9 +97,10 @@ func main() {
 	// Read flags
 	task := flag.String("task", "", "the task to be bechmarked")
 	nameserver := flag.String("nameserver", "127.0.0.1", "nameserver to zone-walk")
-	parallel := flag.Int("parallel", 1, "parallel queries")
+	parallel := flag.Int("parallel", 10, "parallel queries")
 	rate := flag.Int("rate", 0, "rate limit")
 	verbose := flag.Int("verbose", 1, "verbosity level")
+	size := flag.Int("size", 1000, "size")
 	flag.Parse()
 
 	if *task == "nsec" {
@@ -133,23 +134,23 @@ func main() {
 		//parallelOptions := []int{1, 5, 10, 20, 50, 100, 200, 500, 1000}
 		//parallelOptions := []int{1, 10, 20, 100}
 
-		for _, size := range nsec3RecordSizes {
-			fmt.Printf(",%d", size)
-		}
-		fmt.Println()
+		// for _, size := range nsec3RecordSizes {
+		// 	fmt.Printf(",%d", size)
+		// }
+		// fmt.Println()
 
 		// for _, parallelReq := range parallelOptions {
-		saasReconnResults := make(map[int][]float64)
-		for _, size := range nsec3RecordSizes {
-			for repeats := 0; repeats < experimentsPerSample; repeats++ {
-				log.Printf("Size %d, experiment %d, parallel %d", size, repeats, *parallel)
-				result, _ := runNsec3Experiment(fmt.Sprintf(nsec3ZonePattern, size), *nameserver, *parallel, *rate, *verbose)
-				saasReconnResults[size] = append(saasReconnResults[size], float64(result))
-				time.Sleep(20 * time.Second)
-			}
-		}
+		// saasReconnResults := make(map[int][]float64)
+		// for _, size := range nsec3RecordSizes {
+		// 	for repeats := 0; repeats < experimentsPerSample; repeats++ {
+		log.Printf("Size %d, parallel %d, rate %d", *size, *parallel, *rate)
+		result, _ := runNsec3Experiment(fmt.Sprintf(nsec3ZonePattern, *size), *nameserver, *parallel, *rate, *verbose)
+		fmt.Printf(",%d", result)
+		// time.Sleep(20 * time.Second)
+		// 	}
+		// }
 
-		printResults(fmt.Sprintf("saas-reconn with %d p. queries and %d rate limit", *parallel, *rate), saasReconnResults, nsec3RecordSizes)
+		// printResults(fmt.Sprintf("saas-reconn with %d p. queries and %d rate limit", *parallel, *rate), saasReconnResults, nsec3RecordSizes)
 		// }
 	} else if *task == "nsec3-other" {
 
