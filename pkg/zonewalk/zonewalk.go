@@ -496,6 +496,7 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 
 	queriesCount = 0
 	hashDelayAccum, hashDelayCount := 0, 0
+	dnsReqLimitAccum, dnsReqLimitCount := 0, 0
 	dnsRequestsOnRoute := make(chan bool, config.Parallel)
 	go func() {
 		for !finishedMapping {
@@ -508,7 +509,10 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 			}
 
 			// Limit number of parallel DNS queries
+			start = time.Now()
 			dnsRequestsOnRoute <- true
+			dnsReqLimitAccum += int(time.Since(start).Milliseconds())
+			dnsReqLimitCount++
 
 			tools.DnsAsyncQuery(config.Nameserver, config.Zone, domainLookup, dns.TypeA, config.Verbose, pendingResults, func() { <-dnsRequestsOnRoute })
 			queriesCount++
@@ -524,7 +528,6 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 	}()
 
 	dnsQueryDelayAccum, dnsQueryDelayCount := 0, 0
-	dnsRespProcessAccum, dnsRespProcessCount := 0, 0
 	hashAddAccum, hashAddCount := 0, 0
 	go func() {
 		for !finishedMapping {
@@ -600,8 +603,8 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 					config.Nameserver,
 					config.Zone,
 					float64(hashDelayAccum)/float64(hashDelayCount),
+					float64(dnsReqLimitAccum)/float64(dnsReqLimitCount),
 					float64(dnsQueryDelayAccum)/float64(dnsQueryDelayCount),
-					float64(dnsRespProcessAccum)/float64(dnsRespProcessCount),
 					float64(hashAddAccum)/float64(hashAddCount))
 			}
 		}

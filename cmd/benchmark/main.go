@@ -17,7 +17,7 @@ var nsec3RecordSizes []int = []int{1000, 2000, 5000, 10000, 20000}
 const nsecZonePattern string = "nsec%d.kukk.uk"
 const nsec3ZonePattern string = "nsec3_%d.kukk.uk"
 
-func runNsecExperiment(zone string, nameserver string) (results []float64) {
+func runNsecExperiment(zone string, nameserver string, verbose int) (results []float64) {
 	start := time.Now()
 	zonewalk.NsecZoneWalking(zonewalk.Config{
 		UpdateCache: false,
@@ -25,7 +25,7 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 		Nameserver:  nameserver + ":53",
 		RateLimit:   -1,
 		Timeout:     0, // no timeout
-		Verbose:     1,
+		Verbose:     verbose,
 		Zone:        zone,
 	})
 	results = append(results, time.Since(start).Seconds())
@@ -36,7 +36,7 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 		Nameserver:  nameserver + ":53",
 		RateLimit:   0,
 		Timeout:     0, // no timeout
-		Verbose:     1,
+		Verbose:     verbose,
 		Zone:        zone,
 	})
 	results = append(results, time.Since(start).Seconds())
@@ -47,7 +47,7 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 		Nameserver:  nameserver + ":53",
 		RateLimit:   20,
 		Timeout:     0, // no timeout
-		Verbose:     1,
+		Verbose:     verbose,
 		Zone:        zone,
 	})
 	results = append(results, time.Since(start).Seconds())
@@ -59,14 +59,14 @@ func runNsecExperiment(zone string, nameserver string) (results []float64) {
 	return results
 }
 
-func runNsec3Experiment(zone string, nameserver string, parallelReq int, rate int) (hashes int, queries int) {
+func runNsec3Experiment(zone string, nameserver string, parallelReq int, rate int, verbose int) (hashes int, queries int) {
 	hashes, queries = zonewalk.Nsec3ZoneMapping(zonewalk.Config{
 		Mode:       2,
 		Nameserver: nameserver + ":53",
 		Parallel:   parallelReq,
 		RateLimit:  rate,
 		Timeout:    30,
-		Verbose:    3,
+		Verbose:    verbose,
 		Zone:       zone,
 	}, "03f92714", 10)
 
@@ -97,6 +97,7 @@ func main() {
 	nameserver := flag.String("nameserver", "127.0.0.1", "nameserver to zone-walk")
 	parallel := flag.Int("parallel", 1, "parallel queries")
 	rate := flag.Int("rate", 0, "rate limit")
+	verbose := flag.Int("verbose", 1, "verbosity level")
 	flag.Parse()
 
 	if *task == "nsec" {
@@ -108,7 +109,7 @@ func main() {
 		for _, size := range nsecRecordSizes {
 			for repeats := 0; repeats < experimentsPerSample; repeats++ {
 				log.Printf("Size %d, experiment %d", size, repeats)
-				results := runNsecExperiment(fmt.Sprintf(nsecZonePattern, size), *nameserver)
+				results := runNsecExperiment(fmt.Sprintf(nsecZonePattern, size), *nameserver, *verbose)
 				saasReconnNoLimResults[size] = append(saasReconnNoLimResults[size], results[0])
 				saasReconnContLimResults[size] = append(saasReconnContLimResults[size], results[1])
 				saasReconnSafeRateResults[size] = append(saasReconnSafeRateResults[size], results[2])
@@ -140,7 +141,7 @@ func main() {
 		for _, size := range nsec3RecordSizes {
 			for repeats := 0; repeats < experimentsPerSample; repeats++ {
 				log.Printf("Size %d, experiment %d, parallel %d", size, repeats, *parallel)
-				result, _ := runNsec3Experiment(fmt.Sprintf(nsec3ZonePattern, size), *nameserver, *parallel, *rate)
+				result, _ := runNsec3Experiment(fmt.Sprintf(nsec3ZonePattern, size), *nameserver, *parallel, *rate, *verbose)
 				saasReconnResults[size] = append(saasReconnResults[size], float64(result))
 				time.Sleep(5 * time.Second)
 			}
