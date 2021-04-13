@@ -7,11 +7,11 @@ import (
 	"regexp"
 	"time"
 
-	"saasreconn/pkg/api"
-	"saasreconn/pkg/db"
-	"saasreconn/pkg/provider"
-	"saasreconn/pkg/report"
-	"saasreconn/pkg/tools"
+	"saasreconn/internal/api"
+	"saasreconn/internal/db"
+	"saasreconn/internal/provider"
+	"saasreconn/internal/report"
+	"saasreconn/internal/tools"
 )
 
 const searchDNSCorporateConfidence = 65

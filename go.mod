@@ -18,28 +18,28 @@ require (
 	google.golang.org/genproto v0.0.0-20210303154014-9728d6b83eeb // indirect
 	google.golang.org/grpc v1.36.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	saasreconn/pkg/api v0.0.0-00010101000000-000000000000
-	saasreconn/pkg/cache v1.0.0
-	saasreconn/pkg/checks v1.0.0
-	saasreconn/pkg/db v1.0.0
-	saasreconn/pkg/provider v1.0.0
-	saasreconn/pkg/report v0.0.0-00010101000000-000000000000 // indirect
-	saasreconn/pkg/tools v1.0.0
-	saasreconn/pkg/zonewalk v1.0.0
+	saasreconn/internal/api v0.0.0-00010101000000-000000000000
+	saasreconn/internal/cache v1.0.0
+	saasreconn/internal/checks v1.0.0
+	saasreconn/internal/db v1.0.0
+	saasreconn/internal/provider v1.0.0
+	saasreconn/internal/report v0.0.0-00010101000000-000000000000 // indirect
+	saasreconn/internal/tools v1.0.0
+	saasreconn/internal/zonewalk v1.0.0
 )
 
-replace saasreconn/pkg/provider => ./pkg/provider
+replace saasreconn/internal/provider => ./internal/provider
 
-replace saasreconn/pkg/db => ./pkg/db
+replace saasreconn/internal/db => ./internal/db
 
-replace saasreconn/pkg/zonewalk => ./pkg/zonewalk
+replace saasreconn/internal/zonewalk => ./internal/zonewalk
 
-replace saasreconn/pkg/api => ./pkg/api
+replace saasreconn/internal/api => ./internal/api
 
-replace saasreconn/pkg/checks => ./pkg/checks
+replace saasreconn/internal/checks => ./internal/checks
 
-replace saasreconn/pkg/cache => ./pkg/cache
+replace saasreconn/internal/cache => ./internal/cache
 
-replace saasreconn/pkg/tools => ./pkg/tools
+replace saasreconn/internal/tools => ./internal/tools
 
-replace saasreconn/pkg/report => ./pkg/report
+replace saasreconn/internal/report => ./internal/report

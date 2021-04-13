@@ -5,9 +5,9 @@ import (
 	"log"
 	"strings"
 
-	"saasreconn/pkg/api"
-	"saasreconn/pkg/db"
-	"saasreconn/pkg/provider"
+	"saasreconn/internal/api"
+	"saasreconn/internal/db"
+	"saasreconn/internal/provider"
 )
 
 const passiveConfidence = 60

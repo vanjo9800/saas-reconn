@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"saasreconn/pkg/cache"
-	"saasreconn/pkg/zonewalk"
+	"saasreconn/internal/cache"
+	"saasreconn/internal/zonewalk"
 )
 
 const zonewalkCacheDirectory = "data/cache/zonewalk/"

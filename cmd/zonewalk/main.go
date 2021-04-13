@@ -6,9 +6,9 @@ import (
 	"log"
 	"os"
 
-	"saasreconn/pkg/db"
-	"saasreconn/pkg/provider"
-	"saasreconn/pkg/zonewalk"
+	"saasreconn/internal/db"
+	"saasreconn/internal/provider"
+	"saasreconn/internal/zonewalk"
 )
 
 const zoneWalkConfidence = 70

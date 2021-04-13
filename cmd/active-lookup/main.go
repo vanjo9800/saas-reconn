@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"saasreconn/pkg/checks"
-	"saasreconn/pkg/db"
-	"saasreconn/pkg/provider"
-	"saasreconn/pkg/tools"
+	"saasreconn/internal/checks"
+	"saasreconn/internal/db"
+	"saasreconn/internal/provider"
+	"saasreconn/internal/tools"
 )
 
 const activePageValidConfidence = 80

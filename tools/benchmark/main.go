@@ -4,8 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"saasreconn/pkg/tools"
-	"saasreconn/pkg/zonewalk"
+	"saasreconn/internal/tools"
+	"saasreconn/internal/zonewalk"
 	"time"
 )
 
@@ -22,7 +22,7 @@ func runNsecExperiment(zone string, nameserver string, verbose int) (results []f
 	zonewalk.NsecZoneWalking(zonewalk.Config{
 		UpdateCache: false,
 		Mode:        1,
-		Nameserver:  nameserver + ":53",
+		Nameservers: []string{nameserver},
 		RateLimit:   -1,
 		Timeout:     0, // no timeout
 		Verbose:     verbose,
@@ -33,7 +33,7 @@ func runNsecExperiment(zone string, nameserver string, verbose int) (results []f
 	start = time.Now()
 	zonewalk.NsecZoneWalking(zonewalk.Config{
 		UpdateCache: false,
-		Nameserver:  nameserver + ":53",
+		Nameservers: []string{nameserver},
 		RateLimit:   0,
 		Timeout:     0, // no timeout
 		Verbose:     verbose,
@@ -44,7 +44,7 @@ func runNsecExperiment(zone string, nameserver string, verbose int) (results []f
 	start = time.Now()
 	zonewalk.NsecZoneWalking(zonewalk.Config{
 		UpdateCache: false,
-		Nameserver:  nameserver + ":53",
+		Nameservers: []string{nameserver},
 		RateLimit:   20,
 		Timeout:     0, // no timeout
 		Verbose:     verbose,
@@ -60,14 +60,14 @@ func runNsecExperiment(zone string, nameserver string, verbose int) (results []f
 }
 
 func runNsec3Experiment(zone string, nameserver string, parallelReq int, rate int, verbose int) (hashes int, queries int) {
-	hashes, queries = zonewalk.Nsec3ZoneMapping(zonewalk.Config{
-		Mode:       2,
-		Nameserver: nameserver + ":53",
-		Parallel:   parallelReq,
-		RateLimit:  rate,
-		Timeout:    30,
-		Verbose:    verbose,
-		Zone:       zone,
+	hashes, queries = zonewalk.Nsec3ZoneEnumeration(zonewalk.Config{
+		Mode:        2,
+		Nameservers: []string{nameserver},
+		Parallel:    parallelReq,
+		RateLimit:   rate,
+		Timeout:     30,
+		Verbose:     verbose,
+		Zone:        zone,
 	}, "03f92714", 10)
 
 	log.Printf("%s:%s - req %d - rate %d - %d hashes and %d queries", zone, nameserver, parallelReq, rate, hashes, queries)
