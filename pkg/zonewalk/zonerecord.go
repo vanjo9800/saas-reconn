@@ -324,7 +324,8 @@ func (list *ZoneList) Closest(hash string) ZoneRecord {
 func (list *ZoneList) Covered(hash string) bool {
 	// Find its predecessor, or the node itself
 	node := list.Closest(hash)
-	if node.Name != "" && node.Next >= hash {
+	// If the next hash is greater, or the next hash is the first one in the list
+	if node.Name != "" && (node.Next >= hash || node.Next < node.Name) {
 		return true
 	}
 

@@ -60,8 +60,12 @@ func main() {
 	}
 	fmt.Println("Executing zone-walking script")
 
+	var nameservers []string
+	if *nameserver != "" {
+		nameservers = append(nameservers, *nameserver)
+	}
 	config := zonewalk.Config{
-		Nameserver:   *nameserver,
+		Nameservers:  nameservers,
 		Timeout:      *timeout,
 		MappingCache: !*noCache,
 		GuessesCache: !*noCache,

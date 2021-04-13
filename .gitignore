@@ -3,9 +3,9 @@
 /temp/
 /reports/
 configs/credentials.yaml
-/resources/wordlists
+/resources/wordlists*
 /resources/companies
 .vscode/
 .DS_Store
-wordlist-evaluation.csv
+wordlist-*.csv
 /benchmarks/

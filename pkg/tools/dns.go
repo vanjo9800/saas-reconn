@@ -3,12 +3,17 @@ package tools
 import (
 	"log"
 	"math"
+	"net"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/miekg/dns"
 )
+
+const defaultNameserverPort = 53
 
 // Timeout log
 var dnsTimeoutLogLock sync.Mutex
@@ -56,6 +61,25 @@ func buildMessage() (message *dns.Msg) {
 	return message
 }
 
+func cleanNameserver(nameserver string) (string, string) {
+	// Starting with @
+	if nameserver[0] == '@' {
+		nameserver = nameserver[1:]
+	}
+
+	// Surrounded by []
+	if nameserver[0] == '[' {
+		nameserver = nameserver[1 : len(nameserver)-1]
+	}
+
+	parts := strings.Split(nameserver, ":")
+	parts[0] = strings.TrimSuffix(parts[0], ".")
+	if len(parts) == 1 {
+		parts = append(parts, strconv.Itoa(defaultNameserverPort))
+	}
+	return parts[0], parts[1]
+}
+
 // GetNameservers returns an list witht the nameservers for a domain name
 func GetNameservers(domain string) (nameservers []string) {
 	response := DnsSyncQuery("8.8.8.8:53", domain, domain, dns.TypeNS, 2)
@@ -80,6 +104,12 @@ func GetClientConn(nameserver string, connectionType string, verbosity int) (cli
 	client.Net = connectionType
 	client.UDPSize = 12320
 
+	nameserver, port := cleanNameserver(nameserver)
+	if i := net.ParseIP(nameserver); i != nil {
+		nameserver = net.JoinHostPort(nameserver, port)
+	} else {
+		nameserver = dns.Fqdn(nameserver) + ":" + port
+	}
 	conn, err := client.Dial(nameserver)
 	if err != nil {
 		tooManyConnectionsMatch, tooManyConnectionsMatchErr := regexp.MatchString(`socket: too many open files`, err.Error())
