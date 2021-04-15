@@ -11,8 +11,8 @@ import (
 	"github.com/miekg/dns"
 )
 
-const zoneScanDomainsBufferSize = 100
-const zoneScanResultsBufferSize = 10
+const zoneScanDomainsBufferSize = 20
+const zoneScanResultsBufferSize = 20
 
 func fetchNsec3Cache(zone string, salt string, iterations int) (cachedZoneWalk cache.CachedZoneWalk) {
 	cachedResults := cache.NewCache()
