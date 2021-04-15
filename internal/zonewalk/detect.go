@@ -26,6 +26,7 @@ func DetectDNSSECType(config Config, nameserver string) (recordType string, salt
 			nextDomain := rr.(*dns.NSEC).NextDomain
 			if strings.HasPrefix(nextDomain, "\000") {
 				fmt.Printf("[%s:%s] DNS server appears to use NSEC \"black lies\"\n NSEC record:  %s -> %s\n", nameserver, config.Zone, rr.Header().Name, nextDomain)
+				return "", "", 0
 			}
 			return "nsec", "", 0
 		}
@@ -43,6 +44,7 @@ func DetectDNSSECType(config Config, nameserver string) (recordType string, salt
 			nextDomainHash := rr.(*dns.NSEC3).NextDomain
 			if CoveredDistance(headerHash, nextDomainHash) == big.NewInt(2) {
 				fmt.Printf("[%s:%s] DNS server appears to use \"white lies\"\n NSEC3 record:  %s -> %s\n", nameserver, config.Zone, headerHash, nextDomainHash)
+				return "", "", 0
 			}
 
 			// Check for "opt-out" flag

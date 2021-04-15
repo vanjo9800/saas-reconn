@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"saasreconn/internal/tools"
+	"time"
 )
 
 // AttemptWalk tests whether a particular zone supports DNSSEC and attempts zone-walking it
@@ -49,7 +50,11 @@ func AttemptWalk(config Config) (names []string, isDNSSEC bool) {
 		}
 		if config.Mode != 2 {
 			log.Printf("[%s] Starting NSEC3 hash reversing (salt `%s` and %d iterations)", config.Zone, salt, iterations)
+			start := time.Now()
 			reversedNames, _ := Nsec3ZoneReversing(config, salt, iterations)
+			if config.Verbose >= 3 {
+				log.Printf("Reversing took %s", time.Since(start))
+			}
 			names = append(names, reversedNames...)
 		}
 	} else {
