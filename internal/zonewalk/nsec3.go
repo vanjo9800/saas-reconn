@@ -64,7 +64,7 @@ func Nsec3ZoneEnumeration(config Config, salt string, iterations int) (hashesCou
 		fmt.Printf("\n[%s] Finished zone-enumeration...\n", config.Zone)
 	}
 	if config.Verbose >= 3 {
-		fmt.Printf("\n[%s] Found %d (%d new) hashes in %s\n", config.Zone, len(hashes), len(hashes)-initialHashCount, elapsed)
+		fmt.Printf("\n[%s] Found %d (%d new) hashes in %s with %d queries\n", config.Zone, len(hashes), len(hashes)-initialHashCount, elapsed, queriesCount)
 	}
 
 	if config.UpdateCache {
