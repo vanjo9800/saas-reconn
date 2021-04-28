@@ -338,6 +338,9 @@ func (list *ZoneList) HashedNames() (result []string) {
 
 // ExportList exports a constructed ZoneList
 func (list *ZoneList) ExportList() (exportList cache.CachedZoneList) {
+	list.addingMutex.Lock()
+	defer list.addingMutex.Unlock()
+
 	exportList = cache.CachedZoneList{
 		Names: []string{},
 		Prev:  []string{},

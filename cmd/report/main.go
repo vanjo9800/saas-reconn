@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
+	"sort"
 	"time"
 
 	"saasreconn/internal/api"
@@ -78,8 +81,10 @@ func main() {
 	confidenceThreshold := flag.Int("confidence-threshold", searchDNSCorporateConfidence, "confidence treshold")
 	endpointsConfig := flag.String("endpoints-config", "configs/saas-endpoints.yaml", "a SaaS providers endpoints file")
 	extended := flag.Bool("extended", false, "search for any subdomains matching corporate name")
+	screenshot := flag.Bool("screenshot", true, "take page screenshots")
 	noSearchDNS := flag.Bool("no-searchdns", false, "do not suggest other potential subdomains from SearchDNS")
 	out := flag.String("outfile", "", "set a custom name for the report file")
+	logfile := flag.String("logfile", "", "log just endpoint names")
 	verbose := flag.Int("verbose", 2, "verbosity factor")
 	flag.Parse()
 
@@ -93,6 +98,14 @@ func main() {
 	argsWithoutProg := flag.Args()
 	if len(argsWithoutProg) == 0 {
 		log.Fatalln("Please enter at least one corporate name to scan for.")
+	}
+	var writer *bufio.Writer
+	if *logfile != "" {
+		file, err := os.Create(fmt.Sprintf("reports/logs/%s", *logfile))
+		if err != nil {
+			log.Fatal(err)
+		}
+		writer = bufio.NewWriter(file)
 	}
 	for _, corporateName := range argsWithoutProg {
 
@@ -127,6 +140,9 @@ func main() {
 		}
 		takenScreenshots := 0
 		for index, providerSubdomain := range exportedSubdomains {
+			if !*screenshot {
+				break
+			}
 			if len(providerSubdomain.Subdomains) == 0 {
 				continue
 			}
@@ -136,6 +152,33 @@ func main() {
 			var count int
 			exportedSubdomains[index].Subdomains, count = takeScreenshots(providerSubdomain.Subdomains)
 			takenScreenshots += count
+		}
+		if *logfile != "" {
+			providerNames := []string{}
+			for _, providerSubdomain := range exportedSubdomains {
+				// if !*screenshot {
+				// 	break
+				// }
+				if len(providerSubdomain.Subdomains) == 0 {
+					continue
+				}
+				// if *verbose >= 2 {
+				// 	fmt.Printf("\rFinished %d/%d", takenScreenshots, reportingNamesCount)
+				// }
+				// var count int
+				// exportedSubdomains[index].Subdomains, count = takeScreenshots(providerSubdomain.Subdomains)
+				// takenScreenshots += count
+				// }
+				// for _, name := range db.NamesFromProviderData(exportedSubdomains) {
+				providerNames = append(providerNames, providerSubdomain.Provider)
+			}
+			sort.Strings(providerNames)
+			for _, name := range providerNames {
+				_, err := writer.WriteString(name + "\n")
+				if err != nil {
+					log.Printf("Got error while writing to a log. Err: %s", err.Error())
+				}
+			}
 		}
 		if *verbose >= 2 {
 			fmt.Println("\nDone!")
@@ -151,6 +194,9 @@ func main() {
 		report.ExportToHTML(exportedSubdomains, corporateName, outputFile)
 		fmt.Printf("HTML generation took %s\n", time.Since(start))
 		fmt.Printf("Results file located under reports/%s\n", outputFile)
+	}
+	if *logfile != "" {
+		writer.Flush()
 	}
 
 }

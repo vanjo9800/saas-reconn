@@ -73,7 +73,7 @@ func HttpAsyncRequest(url string, verbosity int, responseBody chan<- string) {
 			responseBody <- ""
 			return
 		}
-		if resp.StatusCode >= 400 {
+		if resp.StatusCode == 404 || resp.StatusCode >= 500 {
 			if verbosity >= 5 {
 				log.Printf("Response for %s has an error code %d, invalidating", url, resp.StatusCode)
 			}
