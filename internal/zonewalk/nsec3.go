@@ -236,14 +236,12 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 			return zoneList.HashedNames(), zoneList.ExportList(), queriesCount
 		case <-tick:
 			if config.Verbose >= 3 {
-				// unQCoverage
-				_, QCoverage := zoneList.Coverage()
+				QCoverage := zoneList.Coverage()
 				fmt.Printf("[%s] Found %d hashes with %d queries, speed %d/second, estimated zone size %s, elapsed time %s\r",
 					config.Zone,
 					zoneList.records(),
 					queriesCount,
 					2*(zoneList.records()-lastCount),
-					// unQCoverage,
 					QCoverage,
 					time.Since(startScan),
 				)

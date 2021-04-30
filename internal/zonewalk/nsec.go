@@ -74,7 +74,7 @@ func nsecRecordsWalk(config Config, finishWalk *bool, queries *tools.AtomicCount
 			time.Sleep(time.Second/time.Duration(config.RateLimit) - time.Since(queryBackOff))
 		} else {
 			if config.RateLimit == 0 {
-				// Need to back-off for at least a second to not overload DNS client
+				// Network congestion rate limiting
 				time.Sleep(time.Millisecond - time.Since(queryBackOff))
 			}
 		}

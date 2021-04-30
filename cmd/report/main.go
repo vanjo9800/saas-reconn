@@ -114,8 +114,7 @@ func main() {
 		start := time.Now()
 		exportedSubdomains := exportProviderData(corporateName, *confidenceThreshold, *extended, resultsDatabase, saasProviders)
 		if !*noSearchDNS {
-			// TODO: fix later
-			otherPotentialSubdomains := tools.UniqueStrings(searchDNSOtherSubdomains(corporateName, *verbose))
+			otherPotentialSubdomains := searchDNSOtherSubdomains(corporateName, *verbose)
 			otherPotentialSubdomains = tools.NotIncluded(otherPotentialSubdomains, db.NamesFromProviderData(exportedSubdomains))
 			otherPotentialSubdomains = tools.FilterTLDs(otherPotentialSubdomains, corporateName)
 			otherPotentialSubdomains = tools.FilterNonAccessibleNames(otherPotentialSubdomains)
@@ -139,6 +138,7 @@ func main() {
 			fmt.Printf("About to take %d screenshots...\n", reportingNamesCount)
 		}
 		takenScreenshots := 0
+		providerNames := []string{}
 		for index, providerSubdomain := range exportedSubdomains {
 			if !*screenshot {
 				break
@@ -149,29 +149,12 @@ func main() {
 			if *verbose >= 2 {
 				fmt.Printf("\rFinished %d/%d", takenScreenshots, reportingNamesCount)
 			}
+			providerNames = append(providerNames, providerSubdomain.Provider)
 			var count int
 			exportedSubdomains[index].Subdomains, count = takeScreenshots(providerSubdomain.Subdomains)
 			takenScreenshots += count
 		}
 		if *logfile != "" {
-			providerNames := []string{}
-			for _, providerSubdomain := range exportedSubdomains {
-				// if !*screenshot {
-				// 	break
-				// }
-				if len(providerSubdomain.Subdomains) == 0 {
-					continue
-				}
-				// if *verbose >= 2 {
-				// 	fmt.Printf("\rFinished %d/%d", takenScreenshots, reportingNamesCount)
-				// }
-				// var count int
-				// exportedSubdomains[index].Subdomains, count = takeScreenshots(providerSubdomain.Subdomains)
-				// takenScreenshots += count
-				// }
-				// for _, name := range db.NamesFromProviderData(exportedSubdomains) {
-				providerNames = append(providerNames, providerSubdomain.Provider)
-			}
 			sort.Strings(providerNames)
 			for _, name := range providerNames {
 				_, err := writer.WriteString(name + "\n")

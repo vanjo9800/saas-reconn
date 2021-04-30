@@ -57,7 +57,7 @@ func (cache *Cache) FetchCachedZoneWalk(zone string, salt string, iterations int
 func (cache *Cache) FetchZoneWalkForZone(zone string) (data map[string]CachedZoneWalk, err error) {
 	byteData, err := cache.fetchFromCache("zonewalk", zone)
 	if err != nil {
-		// log.Printf("[%s] Could not find existing cache data", zone)
+		log.Printf("[%s] Could not find existing cache data", zone)
 		return map[string]CachedZoneWalk{}, nil
 	}
 
@@ -82,7 +82,7 @@ func (cache *Cache) fetchFromCache(path string, filename string) (data []byte, e
 
 	byteData, err := ioutil.ReadFile(fmt.Sprintf("%s/%s/%s.json", cache.root, path, tools.NameToPath(filename)))
 	if err != nil {
-		// log.Printf("[%s/%s] Could not find existing cache data %s", path, filename, err)
+		log.Printf("[%s/%s] Could not find existing cache data %s", path, filename, err)
 		return []byte("{}"), nil
 	}
 

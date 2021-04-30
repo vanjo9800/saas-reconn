@@ -7,6 +7,7 @@ import (
 
 	"saasreconn/internal/api"
 	"saasreconn/internal/db"
+	"saasreconn/internal/provider"
 )
 
 const passiveConfidence = 60
@@ -16,7 +17,7 @@ func main() {
 	// Read flags
 	apikey := flag.String("vtotal-key", "", "VirusTotal API key")
 	dataProviders := flag.String("dataproviders", "Crt.sh", "a comma separated list of passive data providers to use (supported providers: Crt.sh, VirusTotal, SearchDNS)")
-	provider := flag.String("provider", "", "query for a specific provider")
+	providerOnly := flag.String("provider", "", "query for a specific provider")
 	endpointsConfig := flag.String("endpoints-config", "configs/saas-endpoints.yaml", "a SaaS providers endpoints file")
 	verbose := flag.Int("verbose", 2, "verbosity factor")
 	flag.Parse()
@@ -31,7 +32,7 @@ func main() {
 	log.Println("Updating existing database")
 
 	for name, data := range saasProviders {
-		if *provider != "" && name != *provider {
+		if *providerOnly != "" && name != *providerOnly {
 			continue
 		}
 		for _, domain := range data.Subdomain {

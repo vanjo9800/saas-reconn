@@ -98,12 +98,14 @@ func (list *ZoneList) removeDistanceMetric(distance *big.Int) {
 	}
 }
 
+// Qunatile count and values taken from https://casey.byu.edu/papers/2019_pam_dnssec_lies.pdf
 const quantiles = 10
 
 var quantileWeights = []float64{0.41, 0.15, 0.10, 0.08, 0.07, 0.05, 0.05, 0.04, 0.03, 0.02}
 
 // Coverage returns an estimated coverage of the zone based on the number of current entries and the maximum projected number of entries
-func (list *ZoneList) Coverage() (string, string) {
+// a quantiled approach based on https://casey.byu.edu/papers/2019_pam_dnssec_lies.pdf
+func (list *ZoneList) Coverage() string {
 
 	list.addingMutex.Lock()
 	defer func() {
@@ -111,15 +113,11 @@ func (list *ZoneList) Coverage() (string, string) {
 	}()
 
 	if list.Distances.Size() == 0 {
-		return "0", "0"
+		return "0"
 	}
-	// Unquantiled
-	result1 := new(big.Float)
-	result1.Quo(new(big.Float).SetInt(&list.DistanceSum), big.NewFloat(float64(list.Distances.Size())))
-	result1.Quo(new(big.Float).SetInt(sha1MaxSize), result1)
 
 	// Quantiled
-	result2 := big.NewFloat(0.0)
+	result := big.NewFloat(0.0)
 	perQuantile := list.Distances.Size() / quantiles
 	remainder := list.Distances.Size() % quantiles
 	distanceIterator := list.Distances.Iterator()
@@ -135,12 +133,9 @@ func (list *ZoneList) Coverage() (string, string) {
 				if count == perQuantile && remainder > 0 {
 					remainder--
 				} else {
-					if quantileIndex >= 10 {
-						log.Printf("Something went wrong %d and %d", perQuantile, remainder)
-					}
 					quantileSum.Mul(quantileSum, big.NewFloat(quantileWeights[quantileIndex]))
 					quantileSum.Quo(quantileSum, big.NewFloat(float64(count)))
-					result2.Add(result2, quantileSum)
+					result.Add(result, quantileSum)
 					quantileIndex++
 					quantileSum = quantileSum.SetFloat64(0.0)
 					count = 0
@@ -150,9 +145,9 @@ func (list *ZoneList) Coverage() (string, string) {
 			count++
 		}
 	}
-	result2.Quo(new(big.Float).SetInt(sha1MaxSize), result2)
+	result.Quo(new(big.Float).SetInt(sha1MaxSize), result)
 
-	return result1.String(), result2.String()
+	return result.String()
 }
 
 // CreateZoneList constructs an empty zone list object

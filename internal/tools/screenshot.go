@@ -72,7 +72,7 @@ func screenshotFromURLToBytes(url string) (imageBytes []byte, screenshotError er
 	timeoutContext, cancel := context.WithTimeout(ctx, screenshotTimeout)
 	defer cancel()
 
-	// Run Screenshot Tasks
+	// Run screenshot fetches
 	if err := chromedp.Run(timeoutContext, screenshotTasks(url, 90, &imageBytes)); err != nil {
 		log.Printf("[%s] Error querying page: %s", url, err)
 		return nil, err
@@ -85,12 +85,8 @@ func screenshotTasks(url string, quality int64, imageBuffer *[]byte) chromedp.Ta
 	return chromedp.Tasks{
 		chromedp.Navigate(url),
 		chromedp.Sleep(5 * time.Second),
-		// chromedp.ActionFunc(func(ctx context.Context) (err error) {
-		// 	*imageBuf, err = page.CaptureScreenshot().WithQuality(90).Do(ctx)
-		// 	return err
-		// }),
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			// get layout metrics
+			// Get page layout metrics
 			_, _, contentSize, err := page.GetLayoutMetrics().Do(ctx)
 			if err != nil {
 				return err
@@ -99,7 +95,7 @@ func screenshotTasks(url string, quality int64, imageBuffer *[]byte) chromedp.Ta
 			width, height := int64(math.Ceil(contentSize.Width)), int64(math.Ceil(contentSize.Height))
 			height = int64(math.Min(float64(width), float64(height)))
 
-			// force viewport emulation
+			// Force viewport emulation
 			err = emulation.SetDeviceMetricsOverride(width, height, 1, false).
 				WithScreenOrientation(&emulation.ScreenOrientation{
 					Type:  emulation.OrientationTypeLandscapePrimary,
@@ -110,7 +106,7 @@ func screenshotTasks(url string, quality int64, imageBuffer *[]byte) chromedp.Ta
 				return err
 			}
 
-			// capture screenshot
+			// Capture screenshot image
 			*imageBuffer, err = page.CaptureScreenshot().
 				WithQuality(quality).
 				WithClip(&page.Viewport{

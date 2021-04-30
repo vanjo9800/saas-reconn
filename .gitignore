@@ -9,3 +9,5 @@ configs/credentials.yaml
 .DS_Store
 wordlist-*.csv
 /benchmarks/
+/internal-tools/
+Dockerfile

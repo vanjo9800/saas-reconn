@@ -6,8 +6,6 @@ import (
 	"saasreconn/internal/tools"
 	"time"
 
-	// "../tools"
-
 	"github.com/jackc/pgconn"
 )
 
@@ -19,9 +17,6 @@ func CrtShQuery(domain string, verbosity int) (subdomains []string) {
 		log.Printf("[Crt.sh] Querying Crt.sh for %s", domain)
 	}
 	start := time.Now()
-
-	// TODO - revise
-	time.Sleep(10 * time.Second)
 
 	cfg, err := pgconn.ParseConfig("user=guest host=crt.sh port=5432 database=certwatch")
 	if err != nil {
@@ -51,7 +46,6 @@ func CrtShQuery(domain string, verbosity int) (subdomains []string) {
 	for result.NextRow() {
 		cleanName := tools.CleanDomainName(string(result.Values()[0]))
 		subdomains = append(subdomains, cleanName)
-		// subdomains = tools.UniqueStrings(subdomains)
 		if len(subdomains) > 100000 {
 			if verbosity >= 3 {
 				log.Printf("[Crt.sh] Read more than 100000 domains for %s, skipping for now...", domain)
