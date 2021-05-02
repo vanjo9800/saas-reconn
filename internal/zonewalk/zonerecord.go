@@ -323,6 +323,9 @@ func (list *ZoneList) Covered(hash string) bool {
 
 // HashedNames returns the hashed names of the mapped records in a zone
 func (list *ZoneList) HashedNames() (result []string) {
+	list.addingMutex.Lock()
+	defer list.addingMutex.Unlock()
+
 	result = []string{}
 	for _, hash := range list.Names.Keys() {
 		result = append(result, hash.(string))
