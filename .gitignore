@@ -10,4 +10,4 @@ configs/credentials.yaml
 wordlist-*.csv
 /benchmarks/
 /internal-tools/
-Dockerfile
+/Dockerfile
