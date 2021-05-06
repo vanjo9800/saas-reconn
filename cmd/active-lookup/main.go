@@ -13,9 +13,9 @@ import (
 	"saasreconn/internal/tools"
 )
 
-const activePageValidConfidence = 80
-const activePageInvalidConfidence = 30
-const logoConfidence = 90
+const activePageInvalidConfidence = -1
+const activePageValidConfidence = 4
+const logoConfidence = 5
 
 func main() {
 

@@ -10,7 +10,7 @@ import (
 	"saasreconn/internal/provider"
 )
 
-const passiveConfidence = 60
+const passiveConfidence = 1
 
 func main() {
 

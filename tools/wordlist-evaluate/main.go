@@ -35,7 +35,7 @@ func main() {
 
 	// Read flags
 	wordlist := flag.String("wordlist", "", "path to wordlist to evaluate")
-	hashcat := flag.Bool("hashcat", true, "use hashcat for hash reversing")
+	hashcat := flag.Bool("hashcat", true, "use hashcat for brute forcing")
 	output := flag.String("out", "wordlist-evaluation.csv", "path to CSV output")
 	verbose := flag.Int("verbose", 1, "verbosity factor")
 	flag.Parse()
@@ -105,7 +105,7 @@ func main() {
 					guessed, wordlistSize = zonewalk.NsecZoneCoverage(config)
 				} else {
 					// NSEC3 based provider, uses SHA1 hashes
-					guessed, wordlistSize = zonewalk.Nsec3ZoneReversing(config, salt, iterations)
+					guessed, wordlistSize = zonewalk.Nsec3HashBruteForcing(config, salt, iterations)
 				}
 				wordlistData = append(wordlistData, fmt.Sprintf("%d", len(guessed)))
 				fmt.Printf("\r%d names guessed for zone %s\n", len(guessed), zone)

@@ -10,9 +10,9 @@ import (
 // AttemptWalk tests whether a particular zone supports DNSSEC and attempts zone-walking it
 func AttemptWalk(config Config) (names []string, isDNSSEC bool) {
 	// Mode 0 is just diagnosing nameservers
-	// Mode 1 is NSEC zone-walking / NSEC3 zone-mapping + hash reversing
-	// Mode 2 is just NSEC zone-walking / NSEC3 zone-mapping
-	// Mode 3 is just NSEC zone-walking / NSEC3 hash reversing
+	// Mode 1 is NSEC zone-walking / NSEC3 zone enumeration + hash brute forcing
+	// Mode 2 is just NSEC zone-walking / NSEC3 zone enumeration
+	// Mode 3 is just NSEC zone-walking / NSEC3 hash brute forcing
 
 	if len(config.Nameservers) == 0 {
 		config.Nameservers = tools.GetNameservers(config.Zone)
@@ -45,17 +45,17 @@ func AttemptWalk(config Config) (names []string, isDNSSEC bool) {
 			return
 		}
 		if config.Mode != 3 {
-			log.Printf("[%s] Starting NSEC3 zone-enumeration (salt `%s` and %d iterations)", config.Zone, salt, iterations)
+			log.Printf("[%s] Starting NSEC3 zone enumeration (salt `%s` and %d iterations)", config.Zone, salt, iterations)
 			Nsec3ZoneEnumeration(config, salt, iterations)
 		}
 		if config.Mode != 2 {
-			log.Printf("[%s] Starting NSEC3 hash reversing (salt `%s` and %d iterations)", config.Zone, salt, iterations)
+			log.Printf("[%s] Starting NSEC3 hash brute forcing (salt `%s` and %d iterations)", config.Zone, salt, iterations)
 			start := time.Now()
-			reversedNames, _ := Nsec3ZoneReversing(config, salt, iterations)
+			matchedNames, _ := Nsec3HashBruteForcing(config, salt, iterations)
 			if config.Verbose >= 3 {
-				log.Printf("Reversing took %s", time.Since(start))
+				log.Printf("Brute forcing took %s", time.Since(start))
 			}
-			names = append(names, reversedNames...)
+			names = append(names, matchedNames...)
 		}
 	} else {
 		log.Printf("[%s] Unexpected DNSSEC record %s", config.Zone, dnssecType)

@@ -74,7 +74,7 @@ func Nsec3ZoneEnumeration(config Config, salt string, iterations int) (hashesCou
 	return len(hashes), queriesCount
 }
 
-func Nsec3ZoneReversing(config Config, salt string, iterations int) (names []string, dictionarySize int) {
+func Nsec3HashBruteForcing(config Config, salt string, iterations int) (names []string, dictionarySize int) {
 
 	cachedZoneMap := fetchNsec3Cache(config.Zone, salt, iterations)
 	if !config.GuessesCache {
@@ -82,21 +82,21 @@ func Nsec3ZoneReversing(config Config, salt string, iterations int) (names []str
 	}
 
 	if config.Verbose >= 3 {
-		fmt.Printf("[%s] Starting hash reversing of %d hashes...\n", config.Zone, len(cachedZoneMap.Hashes))
+		fmt.Printf("[%s] Starting brute forcing of %d hashes...\n", config.Zone, len(cachedZoneMap.Hashes))
 	}
 	var mapping map[string]string
 	if config.Hashcat {
 		if config.Verbose >= 3 {
-			fmt.Printf("Using hashcat for hash reversing...\n")
+			fmt.Printf("Using hashcat for brute forcing...\n")
 		}
 		exportLocation := ExportToHashcat(cachedZoneMap.Hashes, config.Zone, salt, iterations)
 		mapping, dictionarySize = RunHashcat(config, exportLocation)
 		CleanHashcatDir()
 	} else {
 		if config.Verbose >= 3 {
-			fmt.Printf("Using built-in hash reversing...\n")
+			fmt.Printf("Using built-in brute forcing...\n")
 		}
-		mapping, dictionarySize = localNSEC3HashReverse(config, salt, iterations, cachedZoneMap.Hashes)
+		mapping, dictionarySize = localNSEC3HashBruteForce(config, salt, iterations, cachedZoneMap.Hashes)
 	}
 
 	for hash, guess := range mapping {
@@ -106,7 +106,7 @@ func Nsec3ZoneReversing(config Config, salt string, iterations int) (names []str
 		names = append(names, fmt.Sprintf("%s.%s", prefix, config.Zone))
 	}
 	if config.Verbose >= 3 {
-		fmt.Printf("[%s] Finished hash reversing...\n", config.Zone)
+		fmt.Printf("[%s] Finished hash brute forcing...\n", config.Zone)
 	}
 
 	if config.UpdateCache {
@@ -259,7 +259,7 @@ func nsec3ZoneScan(config Config, salt string, iterations int, cachedZoneList *c
 	}
 }
 
-func localNSEC3HashReverse(config Config, salt string, iterations int, hashes []string) (mapping map[string]string, dictionarySize int) {
+func localNSEC3HashBruteForce(config Config, salt string, iterations int, hashes []string) (mapping map[string]string, dictionarySize int) {
 
 	mapping = make(map[string]string)
 
@@ -287,7 +287,7 @@ func localNSEC3HashReverse(config Config, salt string, iterations int, hashes []
 	}
 
 	if config.Verbose >= 2 {
-		fmt.Printf("[%s] Zone reversing used dictionary of %d entries\n", config.Zone, dictionarySize)
+		fmt.Printf("[%s] Brute forcing used dictionary of %d entries\n", config.Zone, dictionarySize)
 	}
 
 	return mapping, dictionarySize

@@ -11,12 +11,12 @@ var sampleProviderData ProviderData = ProviderData{
 		"example.com": []Subdomain{
 			Subdomain{
 				Name:         "test.example.com",
-				Confidence:   50,
+				Confidence:   1,
 				DiscoveredBy: []string{"Testing suite"},
 			},
 			Subdomain{
 				Name:         "test123.example.com",
-				Confidence:   50,
+				Confidence:   1,
 				DiscoveredBy: []string{"Testing suite"},
 			},
 		},
@@ -30,7 +30,7 @@ func TestQuery(t *testing.T) {
 			"example.com": []Subdomain{
 				Subdomain{
 					Name:         "test.example.com",
-					Confidence:   50,
+					Confidence:   1,
 					DiscoveredBy: []string{"Testing suite"},
 				},
 			},
@@ -51,12 +51,12 @@ func TestUpdateDomainEntries(t *testing.T) {
 	testingProviderData.updateDomainEntries("example.com", []Subdomain{
 		Subdomain{
 			Name:         "test456.example.com",
-			Confidence:   50,
+			Confidence:   1,
 			DiscoveredBy: []string{"Testing suite"},
 		},
 		Subdomain{
 			Name:         "test123.example.com",
-			Confidence:   60,
+			Confidence:   2,
 			DiscoveredBy: []string{"Testing suite"},
 		},
 	})
@@ -66,17 +66,17 @@ func TestUpdateDomainEntries(t *testing.T) {
 			"example.com": []Subdomain{
 				Subdomain{
 					Name:         "test123.example.com",
-					Confidence:   60,
+					Confidence:   2,
 					DiscoveredBy: []string{"Testing suite"},
 				},
 				Subdomain{
 					Name:         "test.example.com",
-					Confidence:   50,
+					Confidence:   1,
 					DiscoveredBy: []string{"Testing suite"},
 				},
 				Subdomain{
 					Name:         "test456.example.com",
-					Confidence:   50,
+					Confidence:   1,
 					DiscoveredBy: []string{"Testing suite"},
 				},
 			},

@@ -11,7 +11,7 @@ import (
 	"saasreconn/internal/zonewalk"
 )
 
-const zoneWalkConfidence = 70
+const zoneWalkConfidence = 3
 
 func runZoneWalking(resultsDatabase *db.Database, name string, config zonewalk.Config, custom bool) {
 	found, isDNSSEC := zonewalk.AttemptWalk(config)
@@ -39,17 +39,17 @@ func main() {
 	// Read flags
 	domain := flag.String("domain", "", "run zone-walking for a specific domain")
 	endpointsConfig := flag.String("endpoints-config", "configs/saas-endpoints.yaml", "a SaaS providers endpoints file")
-	hashcat := flag.Bool("hashcat", true, "use hashcat for reversing NSEC3 hashes")
+	hashcat := flag.Bool("hashcat", true, "use hashcat for brute forcing NSEC3 hashes")
 	listProviders := flag.Bool("list-providers", false, "list all supported providers")
 	nameserver := flag.String("nameserver", "", "run zone-walking for a specific nameserver")
 	noCache := flag.Bool("no-cache", false, "a bool whether to use pre-existing")
 	parallelRequests := flag.Int("parallel", 5, "number of DNS requests to send in parallel")
 	providerName := flag.String("provider", "", "run zone-walking for a specific provider")
 	rateLimit := flag.Int("rate-limit", 20, "limit the number of DNS requests per second to avoid blocking (0 for minimal limit for contention protection, -1 for no limit at all)")
-	timeout := flag.Int("timeout", 60, "number of seconds to run a zone zonewalk mapping")
+	timeout := flag.Int("timeout", 60, "number of seconds to run a zone enumeration per zone")
 	updateCache := flag.Bool("update-cache", true, "should the command update the current zone-walking cache entries")
 	verbose := flag.Int("verbose", 3, "verbosity factor")
-	walkmode := flag.Int("mode", 1, " what mode to use for zone-walking (0 for just DNSSEC test, 1 for both mapping and reversing, 2 for just mapping and storing cache, and 3 for just reversing based on cache)")
+	walkmode := flag.Int("mode", 1, " what mode to use for zone-walking (0 for just DNSSEC check, 1 for both enumeration and brute forcing, 2 for just enumeration and storing cache, and 3 for just brute forcing using cache)")
 	flag.Parse()
 
 	// Database setup

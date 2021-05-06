@@ -23,7 +23,7 @@ func filterConfidence(foundSubdomains map[string][]db.Subdomain, confidenceThres
 
 func main() {
 	provider := flag.String("provider", "", "provider name")
-	confidenceLevel := flag.Int("conf-level", 80, "minimal confidence level")
+	confidenceLevel := flag.Int("conf-level", 3, "minimal confidence score")
 	flag.Parse()
 
 	resultsDatabase := db.NewDatabase()

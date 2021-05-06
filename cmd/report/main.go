@@ -17,7 +17,7 @@ import (
 	"saasreconn/internal/tools"
 )
 
-const searchDNSCorporateConfidence = 65
+const searchDNSCorporateConfidence = 2
 
 func filterConfidence(foundSubdomains map[string][]db.Subdomain, confidenceThreshold int) map[string][]db.Subdomain {
 	domainsReport := make(map[string][]db.Subdomain)
