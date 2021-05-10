@@ -107,7 +107,7 @@ func (db *Database) initialise() bool {
 	}
 
 	if _, err := os.Stat(db.root); os.IsNotExist(err) {
-		err := os.Mkdir(db.root, 0755)
+		err := os.MkdirAll(db.root, 0755)
 		if err != nil {
 			log.Fatal(err)
 			return false
